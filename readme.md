@@ -1,6 +1,6 @@
 # ARM-disasm
 
-This disassembler library was initially developed for the "Black Magic" debugger. This debugger is a front-end for GDB, with specific support for the Black Magic Probe, and a focus on debugging micro-controller projects. The Black Magic Probe targets ARM Cortex M0, M3, and A7 architectures, so that are also the target archtitectures for the ARM-disasm library. Only the 32-bit archiecture is supported (32-bit ARM and Thumb/Thumb-2).
+This disassembler library was initially developed for the "Black Magic" debugger. This debugger is a front-end for GDB, with specific support for the Black Magic Probe, and a focus on debugging micro-controller projects. The Black Magic Probe targets ARM Cortex M0, M3, and A7 architectures, so these are also the target archtitectures for the ARM-disasm library. Only the 32-bit archiecture is supported (32-bit ARM and Thumb/Thumb-2).
 
 The library is written in plain C with C99 extensions.
 
@@ -71,11 +71,11 @@ Function `disasm_buffer` disassembles an entire buffer with binary machine langu
 
 This disassembler library offers no help in determining whether to use ARM mode or Thumb mode. The mode cannot be determined from the instructions themselves. You have to already know the mode to disassemble the buffer correctly. The ARM micro-controller itself uses the low bit of the `PC` register to indicate Thumb mode, even though the Thumb instructions are not actually on an odd address. The DWARF debugging information stores the real (even) function addresses (and does not store the mode). However, the ELF file format also has a symbol table, and this table records the address of Thumb mode functions on an odd address.
 
-To summarize, if you read the ELF symbol table, and then add the functions in that table to this library with `disasm_symbol` (with corrected address and mode appropriately set), function `disasm_buffer` select (and switch) the mode automatically, based on the address.
+To summarize, if you read the ELF symbol table, and then add the functions in that table to this library with `disasm_symbol` (with corrected address and mode appropriately set), function `disasm_buffer` selects (and switches) the mode automatically, based on the address.
 
 ## Why build my own
 
 I am aware of [pebble-disthumb](https://github.com/radare/pebble-disthumb) by pancake/radare.org, and of [DARM](https://github.com/jbremer/darm) by Jurriaan Bremer. The first, pebble-disthumb, is quite limited; but DARM also didn't get a couple of instructions right. DARM is not maintained anymore, and since I am not well versed in Python, the option of forking it and maintaining it myself was not attractive.
 
-I am also aware of [Capstone](http://www.capstone-engine.org/). However, my goal was to "enrich" the disassembly with information extracted from DWARF debugging information. I did not immediately see any "hooks" in Capstone to plug the symbolic information in. Plus, I felt that Capstone is overkill for a tiny debugger that only supports ARM Cortex.
+I am also aware of [Capstone](http://www.capstone-engine.org/). However, my goal was to "enrich" the disassembly with symbols and information extracted ELF and DWARF. I did not immediately see any "hooks" in Capstone to plug the symbolic information in. Plus, I felt that Capstone is overkill for a tiny debugger that only supports ARM Cortex.
 
