@@ -19,7 +19,7 @@ static void printthumb(ARMSTATE *state, uint16_t w, uint16_t w2)
 
 static void testthumb(ARMSTATE *state, uint16_t w, uint16_t w2, int length, const char *match)
 {
-  disasm_clear_map(state);
+  disasm_clear_codepool(state);
   printthumb(state, w, w2);
   assert(state->size == length && strcmp(state->text, match) == 0);
 }
@@ -33,7 +33,7 @@ static void printarm(ARMSTATE *state, uint32_t w)
 
 static void testarm(ARMSTATE *state, uint32_t w, const char *match)
 {
-  disasm_clear_map(state);
+  disasm_clear_codepool(state);
   printarm(state, w);
   assert(state->size == 4 && strcmp(state->text, match) == 0);
 }

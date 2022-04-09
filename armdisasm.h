@@ -27,9 +27,10 @@ typedef struct {
 } ARMSYMBOL;
 
 typedef struct {
-  uint32_t address;
-  int type;           /**< code, literal pool */
-} ARMMAPENTRY;
+  uint32_t address;   /**< start of the block */
+  uint16_t size;      /**< size of the block (or zero if unknown) */
+  uint16_t type;      /**< code, literal pool */
+} ARMPOOL;
 
 typedef struct {
   char text[128];     /**< decoded instruction (optionally prefixed with address/hex values) */
@@ -48,18 +49,20 @@ typedef struct {
   int symbolcount;    /**< number of valid entries in the symbol list */
   int symbolsize;     /**< number of allocated entries in the symbol list */
 
-  ARMMAPENTRY *codemap; /**< list of addresses with type */
-  int mapcount;       /**< number of valid entries in the code map */
-  int mapsize;        /**< number of allocated entries in the code map */
+  ARMPOOL *codepool;  /**< list of addresses with type */
+  int poolcount;      /**< number of valid entries in the code map */
+  int poolsize;       /**< number of allocated entries in the code map */
 } ARMSTATE;
 
-#define DISASM_ADDRESS  0x0001  /* prefix decoded instructions with the address */
-#define DISASM_INSTR    0x0002  /* prefix encoded values (hex) to the decoded instructions */
-#define DISASM_COMMENT  0x0004  /* for immediate values, add hex notation in a comment */
+#define DISASM_ADDRESS  0x0001  /**< prefix decoded instructions with the address */
+#define DISASM_INSTR    0x0002  /**< prefix encoded values (hex) to the decoded instructions */
+#define DISASM_COMMENT  0x0004  /**< for immediate values, add hex notation in a comment */
 
 void disasm_init(ARMSTATE *state, int flags);
 void disasm_cleanup(ARMSTATE *state);
-void disasm_clear_map(ARMSTATE *state);
+
+void disasm_clear_codepool(ARMSTATE *state);
+void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size);
 
 enum {
   ARMMODE_UNKNOWN,      /**< unknown mode for the symbol */

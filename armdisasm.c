@@ -34,8 +34,8 @@ typedef struct tagENCODEMASK32 {
 } ENCODEMASK32;
 
 enum {
-  MAP_CODE,       /* either ARM or Thumb */
-  MAP_LITPOOL,    /* literal pool */
+  POOL_CODE,      /* either ARM or Thumb */
+  POOL_LITERAL,   /* literal pool */
 };
 
 #define MASK(length)                  (~(~0u << (length)))
@@ -290,30 +290,30 @@ static void mark_address_type(ARMSTATE *state, uint32_t address, int type)
   assert(state != NULL);
   /* find the insertion point */
   int pos;
-  for (pos = 0; pos < state->mapcount && state->codemap[pos].address < address; pos++)
+  for (pos = 0; pos < state->poolcount && state->codepool[pos].address < address; pos++)
     {}
-  if (pos >= state->mapcount || state->codemap[pos].address != address) {
+  if (pos >= state->poolcount || state->codepool[pos].address != address) {
     /* an entry must be added, first see whether there is space */
-    assert(state->mapcount <= state->mapsize);
-    if (state->mapcount == state->mapsize) {
-      int newsize = (state->mapsize == 0) ? 8 : 2 * state->mapsize;
-      ARMMAPENTRY *list = malloc(newsize * sizeof(ARMMAPENTRY));
+    assert(state->poolcount <= state->poolsize);
+    if (state->poolcount == state->poolsize) {
+      int newsize = (state->poolsize == 0) ? 8 : 2 * state->poolsize;
+      ARMPOOL *list = malloc(newsize * sizeof(ARMPOOL));
       if (list != NULL) {
-        if (state->codemap != NULL) {
-          memcpy(list, state->codemap, state->mapcount * sizeof(ARMMAPENTRY));
-          free((void*)state->codemap);
+        if (state->codepool != NULL) {
+          memcpy(list, state->codepool, state->poolcount * sizeof(ARMPOOL));
+          free((void*)state->codepool);
         }
-        state->codemap = list;
-        state->mapsize = newsize;
+        state->codepool = list;
+        state->poolsize = newsize;
       }
     }
-    if (state->mapcount < state->mapsize) {
-      if (pos != state->mapcount)
-        memmove(&state->codemap[pos + 1], &state->codemap[pos],
-                (state->mapcount - pos) * sizeof(ARMMAPENTRY));
-      state->mapcount += 1;
-      state->codemap[pos].address = address;
-      state->codemap[pos].type = type;
+    if (state->poolcount < state->poolsize) {
+      if (pos != state->poolcount)
+        memmove(&state->codepool[pos + 1], &state->codepool[pos],
+                (state->poolcount - pos) * sizeof(ARMPOOL));
+      state->poolcount += 1;
+      state->codepool[pos].address = address;
+      state->codepool[pos].type = type;
     }
   }
 }
@@ -321,11 +321,11 @@ static void mark_address_type(ARMSTATE *state, uint32_t address, int type)
 static int lookup_address_type(ARMSTATE *state, uint32_t address)
 {
   assert(state != NULL);
-  assert(state->mapcount == 0 || state->codemap != NULL);
-  assert(state->mapcount <= state->mapsize);
-  int type = MAP_CODE;
-  for (int idx = 0; idx < state->mapcount && state->codemap[idx].address <= address; idx++)
-    type = state->codemap[idx].type;
+  assert(state->poolcount == 0 || state->codepool != NULL);
+  assert(state->poolcount <= state->poolsize);
+  int type = POOL_CODE;
+  for (int idx = 0; idx < state->poolcount && state->codepool[idx].address <= address; idx++)
+    type = state->codepool[idx].type;
   return type;
 }
 
@@ -492,7 +492,7 @@ static int thumb_load_lit(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, [pc, #%u]", register_name(FIELD(instr, 8, 3)), offs);
   offs += state->address + 2;
   append_comment_hex(state, offs);
-  mark_address_type(state, offs, MAP_LITPOOL);
+  mark_address_type(state, offs, POOL_LITERAL);
   state->size = 2;
   return 1;
 }
@@ -628,7 +628,7 @@ static int thumb_cmp_branch(ARMSTATE *state, uint32_t instr)
     address += 32;
   address = state->address + 4 + 2 * address;
   sprintf(tail(state->text), "%s, %07x", register_name(FIELD(instr, 0, 3)), address);
-  mark_address_type(state, address, MAP_CODE);
+  mark_address_type(state, address, POOL_CODE);
   state->size = 2;
   return 1;
 }
@@ -841,7 +841,7 @@ static int thumb_condbranch(ARMSTATE *state, uint32_t instr)
   SIGN_EXT(address, 8);
   address = state->address + 4 + 2 * address;
   sprintf(tail(state->text), "%07x", address);
-  mark_address_type(state, address, MAP_CODE);
+  mark_address_type(state, address, POOL_CODE);
   state->size = 2;
   return 1;
 }
@@ -867,7 +867,7 @@ static int thumb_branch(ARMSTATE *state, uint32_t instr)
   SIGN_EXT(offset, 11);
   int32_t address = state->address + 4 + 2 * offset;
   sprintf(tail(state->text), "%07x", address);
-  mark_address_type(state, address, MAP_CODE);
+  mark_address_type(state, address, POOL_CODE);
   state->size = 2;
   return 1;
 }
@@ -1481,7 +1481,7 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
       int32_t address = state->address + 4 + offset;
       sprintf(tail(state->text), "%07x", address);
       append_comment_symbol(state, address);
-      mark_address_type(state, address, MAP_CODE);
+      mark_address_type(state, address, POOL_CODE);
     } else if (FIELD(instr, 6+16, 4) < 14) {
       /* conditional branch */
       int offs1 = FIELD(instr, 0, 11);
@@ -1500,7 +1500,7 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
       int32_t address = state->address + 4 + offset;
       sprintf(tail(state->text), "%07x", address);
       append_comment_symbol(state, address);
-      mark_address_type(state, address, MAP_CODE);
+      mark_address_type(state, address, POOL_CODE);
     } else if (BIT_SET(instr, 26)) {
       /* secure monitor interrupt */
       if (FIELD(instr, 12, 4) != 8)
@@ -1832,7 +1832,7 @@ static int thumb2_loadstor(ARMSTATE *state, uint32_t instr)
     sprintf(tail(state->text), "[pc, #%ld]", imm);
     imm += state->address + 4;
     append_comment_hex(state, (uint32_t)imm);
-    mark_address_type(state, (uint32_t)imm, MAP_LITPOOL);
+    mark_address_type(state, (uint32_t)imm, POOL_LITERAL);
   } else {
     if (Rm >= 0 && shift >= 0) {
       sprintf(tail(state->text), "[%s, %s, lsl #%d]", register_name(Rn),
@@ -2559,7 +2559,7 @@ static int arm_loadstor_imm(ARMSTATE *state, uint32_t instr)
     strcat(state->text, "!");
   if (Rn == 15 && BIT_SET(instr, 24) && BIT_CLR(instr, 21)) {
     imm += state->address + 4;
-    mark_address_type(state, (uint32_t)imm, MAP_LITPOOL);
+    mark_address_type(state, (uint32_t)imm, POOL_LITERAL);
   }
   append_comment_hex(state, (uint32_t)imm);
   return 1;
@@ -2844,7 +2844,7 @@ static int arm_branch(ARMSTATE *state, uint32_t instr)
   address = state->address + 8 + 4 * address;
   sprintf(tail(state->text), "%07x", address);
   append_comment_symbol(state, address);
-  mark_address_type(state, address, MAP_CODE);
+  mark_address_type(state, address, POOL_CODE);
   return 1;
 }
 
@@ -2994,7 +2994,7 @@ int disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
   state->size = 0;                /* zero'ed out to help debugging */
   state->text[0] = '\0';
 
-  if (lookup_address_type(state, state->address) == MAP_LITPOOL) {
+  if (lookup_address_type(state, state->address) == POOL_LITERAL) {
     state->size = 4;
     dump_word(state, ((uint32_t)hw2 << 16) | hw);
     return 1;
@@ -3045,7 +3045,7 @@ int disasm_arm(ARMSTATE *state, uint32_t w)
   state->it_mask = 0;             /* irrelevant in ARM mode */
   state->size = 4;                /* always 32-bit in ARM mode */
 
-  if (lookup_address_type(state, state->address) == MAP_LITPOOL) {
+  if (lookup_address_type(state, state->address) == POOL_LITERAL) {
     dump_word(state, w);
     return 1;
   }
@@ -3083,17 +3083,48 @@ void disasm_init(ARMSTATE *state, int flags)
     state->add_cmt = 1;
 }
 
-/** disasm_clear_map() erases the map of instructions and literal pool that
- *  the disassembler builds.
+/** disasm_clear_codepool() erases the instruction/literal pool map that the
+ *  disassembler builds.
  */
-void disasm_clear_map(ARMSTATE *state)
+void disasm_clear_codepool(ARMSTATE *state)
 {
   assert(state != NULL);
-  if (state->codemap != NULL) {
-    free((void*)state->codemap);
-    state->codemap = NULL;
-    state->mapcount = 0;
-    state->mapsize = 0;
+  if (state->codepool != NULL) {
+    free((void*)state->codepool);
+    state->codepool = NULL;
+    state->poolcount = 0;
+    state->poolsize = 0;
+  }
+}
+
+/** disasm_compact_codepool() removes redundant entries in the codepool. Calling
+ *  it is optional, but it optimizes processing the pool. It should, however,
+ *  only be called for address regions for which the codepool can be considered
+ *  stable. For example, the address range of a full function after that
+ *  function has been disassembled completely.
+ */
+void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size)
+{
+  assert(state != NULL);
+  if (state->codepool == NULL)
+    return;
+  /* find start */
+  int idx;
+  for (idx = 0; idx < state->poolcount && state->codepool[idx].address < address)
+    {}
+  if (idx == state->poolcount)
+    return; /* all entries in the codepool are below the address, nothing to compact */
+  /* run over the range compacting */
+  int type = state->codepool[idx].type;
+  uint32_t top = address + size;
+  while (idx < state->poolcount && state->codepool[idx].address < top) {
+    int num = 0;
+    for (int i = idx + 1; i < state->poolcount && state->codepool[i].address < top && state->codepool[i].type == type; i++)
+      num += 1;
+    idx += 1;
+    state->poolcount -= num;
+    if (num > 0 && idx + num < state->poolcount)
+      memmove(&state->codepool[idx], &state->codepool[idx + num], (state->poolcount - idx) * sizeof(ARMPOOL));
   }
 }
 
@@ -3128,7 +3159,7 @@ void disasm_address(ARMSTATE *state, uint32_t address)
   state->size = 0;                /* do not increment address on next instruction */
 
   /* set the code block that is now being disassembled */
-  mark_address_type(state, address, MAP_CODE);
+  mark_address_type(state, address, POOL_CODE);
 }
 
 /** disasm_symbol() adds the name and address of a symbol to a list. The
@@ -3175,6 +3206,9 @@ void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode
       state->symbols[pos].name = namecopy;
       state->symbols[pos].address = address;
       state->symbols[pos].mode = mode;
+      /* mark the address of a code symbol in the codepool */
+      if (mode == ARMMODE_ARM || mode == ARMMODE_THUMB)
+        mark_address_type(state, address, POOL_CODE);
     } else {
       free((void*)namecopy);  /* clean up, on failure adding the symbol */
     }

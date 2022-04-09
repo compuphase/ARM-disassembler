@@ -73,6 +73,16 @@ This disassembler library offers no help in determining whether to use ARM mode 
 
 To summarize, if you read the ELF symbol table, and then add the functions in that table to this library with `disasm_symbol` (with corrected address and mode appropriately set), function `disasm_buffer` selects (and switches) the mode automatically, based on the address.
 
+## Code pool
+
+While disassembling, the ARM-disasm library inspects `LDR` instructions to find the start of literal pools, and it inspects the branch instructions to find the end of literal pools. Literal pools may appear in the middle of a function (with the code branching around it). It builds a map of known locations for instructions or literals, which it refers to as the "code map".
+
+When you throw completely unrelated bits of binary code at `disasm_thumb`, `disasm_arm` or `disasm_buffer`, you will need to clear the code pool in between those calls. Otherwise, there is a risk that an instruction isn't decoded, because the address was flagged as "literal pool" during the disassembly of an earlier block of code.
+
+    void disasm_clear_codepool(ARMSTATE *state);
+
+For example, the unit test for this library, which tests a bunch of instructions one by one, clears the code pool at the start of every test.
+
 ## Why build my own
 
 I am aware of [pebble-disthumb](https://github.com/radare/pebble-disthumb) by pancake/radare.org, and of [DARM](https://github.com/jbremer/darm) by Jurriaan Bremer. The first, pebble-disthumb, is quite limited; but DARM also didn't get a couple of instructions right. DARM is not maintained anymore, and since I am not well versed in Python, the option of forking it and maintaining it myself was not attractive.
