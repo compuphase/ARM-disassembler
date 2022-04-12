@@ -3110,7 +3110,7 @@ void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size)
     return;
   /* find start */
   int idx;
-  for (idx = 0; idx < state->poolcount && state->codepool[idx].address < address)
+  for (idx = 0; idx < state->poolcount && state->codepool[idx].address < address; idx++)
     {}
   if (idx == state->poolcount)
     return; /* all entries in the codepool are below the address, nothing to compact */
@@ -3141,7 +3141,7 @@ void disasm_cleanup(ARMSTATE *state)
       free((void*)state->symbols[i].name);
     free((void*)state->symbols);
   }
-  disasm_clear_map(state);
+  disasm_clear_codepool(state);
   memset(state, 0, sizeof(ARMSTATE));
 }
 
