@@ -3175,16 +3175,16 @@ void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode
 {
   assert(state != NULL);
 
-  char *namecopy = strdup(name);
-  if (namecopy == NULL)
-    return; /* skip adding the symbol on a memery error */
-
   /* find the insertion point */
   int pos;
   for (pos = 0; pos < state->symbolcount && state->symbols[pos].address < address; pos++)
     {}
   if (pos >= state->symbolcount || state->symbols[pos].address != address) {
-    /* an entry must be added, first see whether there is space */
+    /* no entry yet at this address */
+    char *namecopy = strdup(name);
+    if (namecopy == NULL)
+      return; /* skip adding the symbol on a memory error */
+    /* first see whether there is space */
     assert(state->symbolcount <= state->symbolsize);
     if (state->symbolcount == state->symbolsize) {
       int newsize = (state->symbolsize == 0) ? 8 : 2 * state->symbolsize;
