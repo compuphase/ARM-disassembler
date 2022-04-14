@@ -38,11 +38,6 @@ static void testarm(ARMSTATE *state, uint32_t w, const char *match)
   assert(state->size == 4 && strcmp(state->text, match) == 0);
 }
 
-void disasm_callback(const char *text)
-{
-  printf("%s\n", text);
-}
-
 int main(void)
 {
   ARMSTATE arm;

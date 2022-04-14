@@ -24,7 +24,7 @@ When done, you need to clean up the internal structures. The `disasm_cleanup` fu
 
     void disasm_cleanup(ARMSTATE *state);
 
-Jump targets (for control flow and function calls) is relative to the instruction address (register `PC`) on the ARM architecture. Therefore, to resolve the address that is really jumped to, you need to know the value of `PC`. The starting value is set with `disasm_address`. The disassembler library then updates the instruction address while disassembling.
+On the ARM architecture, jump targets (for control flow and function calls) are relative to the instruction address (register `PC`). Therefore, to resolve the address that is really jumped to, you need to know the value of `PC`. The starting value is set with `disasm_address`. The disassembler library then updates the instruction address while disassembling.
 
     void disasm_address(ARMSTATE *state, uint32_t address);
 
@@ -32,11 +32,11 @@ If you do not disassemble the code in a single run (from the starting address to
 
 At a low level, there are two functions for disassembling ARM instructions: one for Thumb/Thumb-2 and one for the original 32-bit ARM instructions.
 
-    int disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2);
+    bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2);
 
-    int disasm_arm(ARMSTATE *state, uint32_t w);
+    bool disasm_arm(ARMSTATE *state, uint32_t w);
 
-The reason for splitting it into two functions is that this is how an ARM processor works, too. An ARM processor (assuming it supports both instruction sets) is in either ARM mode or in Thumb mode. This "mode" is set in the low bit of the instruction address (register `PC`), but it is not as simple as that instructions at an odd address are Thumb and instructions at an even address are ARM. In fact, instructions are always at an even address; the ARM processor *only* uses the low bit to check which mode it is in, it ignores this bit when fetching instructions from memory.
+The reason for splitting it into two functions is that this is how an ARM processor works, too. An ARM processor (assuming it supports both instruction sets) is in either ARM mode or in Thumb mode. This "mode" is set in the low bit of the instruction address (register `PC`), but it is not as simple as that instructions at an odd address are Thumb and instructions at an even address are ARM. In fact, instructions are always at an even address; the ARM processor only uses the low bit *to check which mode it is in*, it ignores this bit when fetching instructions from memory.
 
 For the `disasm_thumb` function, you have to pass in two (consecutive) 16-bit "half" words. A Thumb instruction can be either 16-bit (in which case the `hw2` parameter is ignored) or 32-bit. The function returns the instruction size in bytes (so the return value is either 2 or 4). Function `disasm_arm` always returns 4, because all ARM instructions are 32-bit.
 
@@ -61,13 +61,15 @@ Parameter `mode` of function `disasm_symbol` is one of:
 
 The functions `disasm_thumb` and `disasm_arm` do not use the symbol mode. However, function `disasm_buffer` uses it to switch between ARM mode and Thumb mode.
 
-    void disasm_buffer(ARMSTATE *state,
-                       const unsigned char *buffer, size_t buffersize,
-                       DISASM_CALLBACK callback, int mode);
+    bool disasm_buffer(ARMSTATE *state,
+                       const unsigned char *buffer, size_t buffersize, int mode,
+                       DISASM_CALLBACK callback, void *user);
 
-Function `disasm_buffer` disassembles an entire buffer with binary machine language. It calls a callback function for each instruction, with the text of that instruction. Flags set with `disasm_init` apply here too.
+Function `disasm_buffer` disassembles an entire buffer with binary machine language. It calls a callback function for each instruction, with the text of that instruction. Flags set with `disasm_init` apply here too. Parameter `mode` is set to the initial mode (`ARMMODE_ARM` or `ARMMODE_THUMB`), but if symbols (with a known mode) were added, `disasm_buffer` switches the mode as soon as it crosses the address of the symbol.
 
-    typedef void (*DISASM_CALLBACK)(const char *text);
+    typedef bool (*DISASM_CALLBACK)(const char *text, void *user);
+
+On each call to the callback, parameter `text` contains one line of disassembled output. Parameter `user` contains the value that was passed in to function `disasm_buffer`. The callback function must return `true` to proceed with disassembly (it will make `disasm_buffer` abort if it returns `false`).
 
 This disassembler library offers no help in determining whether to use ARM mode or Thumb mode. The mode cannot be determined from the instructions themselves. You have to already know the mode to disassemble the buffer correctly. The ARM micro-controller itself uses the low bit of the `PC` register to indicate Thumb mode, even though the Thumb instructions are not actually on an odd address. The DWARF debugging information stores the real (even) function addresses (and does not store the mode). However, the ELF file format also has a symbol table, and this table records the address of Thumb mode functions on an odd address.
 
@@ -75,7 +77,7 @@ To summarize, if you read the ELF symbol table, and then add the functions in th
 
 ## Code pool
 
-While disassembling, the ARM-disasm library inspects `LDR` instructions to find the start of literal pools, and it inspects the branch instructions to find the end of literal pools. Literal pools may appear in the middle of a function (with the code branching around it). It builds a map of known locations for instructions or literals, which it refers to as the "code map".
+While disassembling, the ARM-disasm library inspects `LDR` instructions to find the start of literal pools, and it inspects the branch instructions to find the end of literal pools. Literal pools may appear in the middle of a function (with the code branching around it). It builds a map of known locations for instructions or literals, which it refers to as the "code pool".
 
 When you throw completely unrelated bits of binary code at `disasm_thumb`, `disasm_arm` or `disasm_buffer`, you will need to clear the code pool in between those calls. Otherwise, there is a risk that an instruction isn't decoded, because the address was flagged as "literal pool" during the disassembly of an earlier block of code.
 
@@ -83,9 +85,15 @@ When you throw completely unrelated bits of binary code at `disasm_thumb`, `disa
 
 For example, the unit test for this library, which tests a bunch of instructions one by one, clears the code pool at the start of every test.
 
+Alternatively, you can compact the code pool (or a range of it):
+
+    void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size);
+
+This function removes redundant entries in the codepool. Calling it is optional, but it optimizes processing the pool and reduces memory requirements. It should, however, only be called for address regions for which the codepool can be considered stable. For example, you can compact the address range of a full function after that function has been disassembled completely.
+
 ## Why build my own
 
 I am aware of [pebble-disthumb](https://github.com/radare/pebble-disthumb) by pancake/radare.org, and of [DARM](https://github.com/jbremer/darm) by Jurriaan Bremer. The first, pebble-disthumb, is quite limited; but DARM also didn't get a couple of instructions right. DARM is not maintained anymore, and since I am not well versed in Python, the option of forking it and maintaining it myself was not attractive.
 
-I am also aware of [Capstone](http://www.capstone-engine.org/). However, my goal was to "enrich" the disassembly with symbols and information extracted ELF and DWARF. I did not immediately see any "hooks" in Capstone to plug the symbolic information in. Plus, I felt that Capstone is overkill for a tiny debugger that only supports ARM Cortex.
+I am also aware of [Capstone](http://www.capstone-engine.org/). However, my goal was to "enrich" the disassembly with symbols and information extracted ELF and DWARF. I did not immediately see any "hooks" in Capstone to plug the symbolic information in. Plus, I felt that Capstone is overkill for a tiny debugger front-end that only supports ARM Cortex.
 

@@ -24,13 +24,13 @@
 typedef struct tagENCODEMASK16 {
   uint16_t mask;  /* bits to mask off for the test */
   uint16_t match; /* masked bits must be equal to this */
-  int (*func)(ARMSTATE *state, uint32_t instr);
+  bool (*func)(ARMSTATE *state, uint32_t instr);
 } ENCODEMASK16;
 
 typedef struct tagENCODEMASK32 {
   uint32_t mask;  /* bits to mask off for the test */
   uint32_t match; /* masked bits must be equal to this */
-  int (*func)(ARMSTATE *state, uint32_t instr);
+  bool (*func)(ARMSTATE *state, uint32_t instr);
 } ENCODEMASK32;
 
 enum {
@@ -329,7 +329,7 @@ static int lookup_address_type(ARMSTATE *state, uint32_t address)
   return type;
 }
 
-static int thumb_shift(ARMSTATE *state, unsigned instr, const char *opcode)
+static bool thumb_shift(ARMSTATE *state, unsigned instr, const char *opcode)
 {
   /* helper function, for the common part of the Thumb shift instructions */
   strcpy(state->text, opcode);
@@ -338,10 +338,10 @@ static int thumb_shift(ARMSTATE *state, unsigned instr, const char *opcode)
   sprintf(tail(state->text), "%s, %s, #%u", register_name(FIELD(instr, 0, 3)),
           register_name(FIELD(instr, 3, 3)), FIELD(instr, 6, 5));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_lsl(ARMSTATE *state, uint32_t instr)
+static bool thumb_lsl(ARMSTATE *state, uint32_t instr)
 {
   /* 0000 0xxx xxxx xxxx - shift by immediate, move register */
   if (FIELD(instr, 6, 5) == 0) {
@@ -351,24 +351,24 @@ static int thumb_lsl(ARMSTATE *state, uint32_t instr)
     sprintf(tail(state->text), "%s, %s", register_name(FIELD(instr, 0, 3)),
             register_name(FIELD(instr, 3, 3)));
     state->size = 2;
-    return 1;
+    return true;
   }
   return thumb_shift(state, instr, "lsl");
 }
 
-static int thumb_lsr(ARMSTATE *state, uint32_t instr)
+static bool thumb_lsr(ARMSTATE *state, uint32_t instr)
 {
   /* 0000 1xxx xxxx xxxx - shift by immediate, move register */
   return thumb_shift(state, instr, "lsr");
 }
 
-static int thumb_asr(ARMSTATE *state, uint32_t instr)
+static bool thumb_asr(ARMSTATE *state, uint32_t instr)
 {
   /* 0001 0xxx xxxx xxxx - shift by immediate, move register */
   return thumb_shift(state, instr, "asr");
 }
 
-static int thumb_addsub_reg(ARMSTATE *state, uint32_t instr)
+static bool thumb_addsub_reg(ARMSTATE *state, uint32_t instr)
 {
   /* 0001 10xx xxxx xxxx - add/subtract register */
   if (BIT_SET(instr, 9))
@@ -380,10 +380,10 @@ static int thumb_addsub_reg(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, %s, %s", register_name(FIELD(instr, 0, 3)),
           register_name(FIELD(instr, 3, 3)), register_name(FIELD(instr, 6, 3)));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_addsub_imm(ARMSTATE *state, uint32_t instr)
+static bool thumb_addsub_imm(ARMSTATE *state, uint32_t instr)
 {
   /* 0001 11xx xxxx xxxx - add/subtract immediate */
   if (BIT_SET(instr, 9))
@@ -397,10 +397,10 @@ static int thumb_addsub_imm(ARMSTATE *state, uint32_t instr)
           register_name(FIELD(instr, 3, 3)), imm);
   append_comment_hex(state, imm);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_immop(ARMSTATE *state, uint32_t instr)
+static bool thumb_immop(ARMSTATE *state, uint32_t instr)
 {
   /* 001x xxxx xxxx xxxx - add/subtract/compare/move immediate */
   static const char *mnemonics[] = { "mov", "cmp", "add", "sub" };
@@ -414,10 +414,10 @@ static int thumb_immop(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, #%u", register_name(FIELD(instr, 8, 3)), imm);
   append_comment_hex(state, imm);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_regop(ARMSTATE *state, uint32_t instr)
+static bool thumb_regop(ARMSTATE *state, uint32_t instr)
 {
   /* 0100 00xx xxxx xxxx - data processing register */
   static const char *mnemonics[] = {
@@ -432,10 +432,10 @@ static int thumb_regop(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, %s", register_name(FIELD(instr, 0, 3)),
           register_name(FIELD(instr, 3, 3)));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_regop_hi(ARMSTATE *state, uint32_t instr)
+static bool thumb_regop_hi(ARMSTATE *state, uint32_t instr)
 {
   /* 0100 0100 xxxx xxxx - special data processing
      0100 0101 xxxx xxxx - special data processing
@@ -466,10 +466,10 @@ static int thumb_regop_hi(ARMSTATE *state, uint32_t instr)
   else
     sprintf(tail(state->text), "%s, %s", register_name(Rd), register_name(Rm));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_branch_exch(ARMSTATE *state, uint32_t instr)
+static bool thumb_branch_exch(ARMSTATE *state, uint32_t instr)
 {
   /* 0100 0111 xxxx xxxx - branch exchange instruction set */
   if (BIT_SET(instr, 7))
@@ -479,10 +479,10 @@ static int thumb_branch_exch(ARMSTATE *state, uint32_t instr)
   padinstr(state->text);
   strcat(state->text, register_name(FIELD(instr, 3, 4)));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_load_lit(ARMSTATE *state, uint32_t instr)
+static bool thumb_load_lit(ARMSTATE *state, uint32_t instr)
 {
   /* 0100 1xxx xxxx xxxx - load from literal pool */
   strcpy(state->text, "ldr");
@@ -494,10 +494,10 @@ static int thumb_load_lit(ARMSTATE *state, uint32_t instr)
   append_comment_hex(state, offs);
   mark_address_type(state, offs, POOL_LITERAL);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_loadstor_reg(ARMSTATE *state, uint32_t instr)
+static bool thumb_loadstor_reg(ARMSTATE *state, uint32_t instr)
 {
   /* 0101 xxxx xxxx xxxx - load/store register offset */
   static const char *mnemonics[] = {
@@ -511,10 +511,10 @@ static int thumb_loadstor_reg(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, [%s, %s]", register_name(FIELD(instr, 0, 3)),
           register_name(FIELD(instr, 3, 3)), register_name(FIELD(instr, 6, 3)));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_loadstor_imm(ARMSTATE *state, uint32_t instr)
+static bool thumb_loadstor_imm(ARMSTATE *state, uint32_t instr)
 {
   /* 011x xxxx xxxx xxxx - load/store word/byte immediate offset */
   if (BIT_SET(instr, 11))
@@ -532,10 +532,10 @@ static int thumb_loadstor_imm(ARMSTATE *state, uint32_t instr)
           register_name(FIELD(instr, 3, 3)), offs);
   append_comment_hex(state, offs);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_loadstor_hw(ARMSTATE *state, uint32_t instr)
+static bool thumb_loadstor_hw(ARMSTATE *state, uint32_t instr)
 {
   /* 1000 xxxx xxxx xxxx - load/store halfword immediate offset */
   if (BIT_SET(instr, 11))
@@ -549,10 +549,10 @@ static int thumb_loadstor_hw(ARMSTATE *state, uint32_t instr)
           register_name(FIELD(instr, 3, 3)), offs);
   append_comment_hex(state, offs);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_loadstor_stk(ARMSTATE *state, uint32_t instr)
+static bool thumb_loadstor_stk(ARMSTATE *state, uint32_t instr)
 {
   /* 1001 xxxx xxxx xxxx - load from or store to stack */
   if (BIT_SET(instr, 11))
@@ -565,10 +565,10 @@ static int thumb_loadstor_stk(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, [sp, #%u]", register_name(FIELD(instr, 8, 3)), offs);
   append_comment_hex(state, offs);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_add_sp_pc_imm(ARMSTATE *state, uint32_t instr)
+static bool thumb_add_sp_pc_imm(ARMSTATE *state, uint32_t instr)
 {
   /* 1010 xxxx xxxx xxxx - add to sp or pc */
   if (BIT_SET(instr, 11))
@@ -581,10 +581,10 @@ static int thumb_add_sp_pc_imm(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, sp, #%u", register_name(FIELD(instr, 8, 3)), imm);
   append_comment_hex(state, imm);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_adj_sp(ARMSTATE *state, uint32_t instr)
+static bool thumb_adj_sp(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 0000 xxxx xxxx - adjust stack pointer */
   if (BIT_SET(instr, 7))
@@ -597,10 +597,10 @@ static int thumb_adj_sp(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "sp, #%u", imm);
   append_comment_hex(state, imm);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_sign_ext(ARMSTATE *state, uint32_t instr)
+static bool thumb_sign_ext(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 0010 xxxx xxxx - sign/zero extend */
   static const char *mnemonics[] = { "sxth", "sxtb", "uxth", "uxtb" };
@@ -612,10 +612,10 @@ static int thumb_sign_ext(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, %s", register_name(FIELD(instr, 0, 3)),
           register_name(FIELD(instr, 3, 3)));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_cmp_branch(ARMSTATE *state, uint32_t instr)
+static bool thumb_cmp_branch(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 x0x1 xxxx xxxx - compare and branch on (non-)zero */
   if (BIT_CLR(instr, 11))
@@ -630,10 +630,10 @@ static int thumb_cmp_branch(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%s, %07x", register_name(FIELD(instr, 0, 3)), address);
   mark_address_type(state, address, POOL_CODE);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_push(ARMSTATE *state, uint32_t instr)
+static bool thumb_push(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 010 xxxx xxxx - push register list */
   strcpy(state->text, "push");
@@ -642,13 +642,13 @@ static int thumb_push(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 8))
     list |= 1 << 14;  /* lr */
   if (list == 0)
-    return 0;
+    return false;
   add_reglist(state->text, list);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_pop(ARMSTATE *state, uint32_t instr)
+static bool thumb_pop(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 110 xxxx xxxx - pop register list */
   strcpy(state->text, "pop");
@@ -657,13 +657,13 @@ static int thumb_pop(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 8))
     list |= 1 << 15;  /* pc */
   if (list == 0)
-    return 0;
+    return false;
   add_reglist(state->text, list);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_endian(ARMSTATE *state, uint32_t instr)
+static bool thumb_endian(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 0110 0101 xxxx - set endianness */
   strcpy(state->text, "setend");
@@ -673,10 +673,10 @@ static int thumb_endian(ARMSTATE *state, uint32_t instr)
   else
     strcat(state->text, "LE");
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_cpu_state(ARMSTATE *state, uint32_t instr)
+static bool thumb_cpu_state(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 0110 011x 0xxx - change processor state */
   strcpy(state->text, "cps");
@@ -692,7 +692,7 @@ static int thumb_cpu_state(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 0))
     strcat(state->text, "f");
   state->size = 2;
-  return 1;
+  return true;
 
 #if 0
   /* code for 32-bit variant of CPS */
@@ -718,7 +718,7 @@ static int thumb_cpu_state(ARMSTATE *state, uint32_t instr)
 #endif
 }
 
-static int thumb_reverse(ARMSTATE *state, uint32_t instr)
+static bool thumb_reverse(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 1010 xxxx xxxx -  reverse bytes */
   switch (FIELD(instr, 6, 2)) {
@@ -732,27 +732,27 @@ static int thumb_reverse(ARMSTATE *state, uint32_t instr)
     strcpy(state->text, "revsh");
     break;
   default:
-    return 0;
+    return false;
   }
   add_it_cond(state, 0);
   padinstr(state->text);
   sprintf(tail(state->text), "%s, %s", register_name(FIELD(instr, 0, 3)),
           register_name(FIELD(instr, 3, 3)));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_break(ARMSTATE *state, uint32_t instr)
+static bool thumb_break(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 1110 xxxx xxxx - software breakpoint */
   strcpy(state->text, "bkpt");
   padinstr(state->text);
   sprintf(tail(state->text), "#%u", FIELD(instr, 0, 8));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_if_then(ARMSTATE *state, uint32_t instr)
+static bool thumb_if_then(ARMSTATE *state, uint32_t instr)
 {
   /* 1011 1111 xxxx xxxx - if-then instructions
      1011 1111 xxxx 0000 - nop-compatible hints */
@@ -762,14 +762,14 @@ static int thumb_if_then(ARMSTATE *state, uint32_t instr)
     static const char *mnemonics[] = { "nop", "yield", "wfe", "wfi", "sev" };
     unsigned opc = FIELD(instr, 4, 4);
     if (opc >= sizearray(mnemonics))
-      return 0;
+      return false;
     strcpy(state->text, mnemonics[opc]);
     add_it_cond(state, 0);
   } else {
     /* if-then */
     unsigned cond = FIELD(instr, 4, 4);
     if (cond >= sizearray(conditions))
-      return 0;
+      return false;
     /* "t" and "e" flags depend on the condition; rebuild the mask for the
        "even" condition code (to get the same output as objdump) */
     state->it_cond = cond;
@@ -793,10 +793,10 @@ static int thumb_if_then(ARMSTATE *state, uint32_t instr)
     strcat(state->text, conditions[cond]);
   }
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_loadstor_mul(ARMSTATE *state, uint32_t instr)
+static bool thumb_loadstor_mul(ARMSTATE *state, uint32_t instr)
 {
   /* 1100 xxxx xxx xxxx - load/store multiple */
   if (BIT_SET(instr, 11))
@@ -809,7 +809,7 @@ static int thumb_loadstor_mul(ARMSTATE *state, uint32_t instr)
   int Rn = FIELD(instr, 8, 3);
   int list = FIELD(instr, 0, 8);
   if (list == 0)
-    return 0;
+    return false;
   strcat(state->text, register_name(Rn));
   if (BIT_CLR(instr, 11) || (list & (1 << Rn)) == 0)
     strcat(state->text, "!");
@@ -817,10 +817,10 @@ static int thumb_loadstor_mul(ARMSTATE *state, uint32_t instr)
   add_reglist(state->text, list);
 
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_condbranch(ARMSTATE *state, uint32_t instr)
+static bool thumb_condbranch(ARMSTATE *state, uint32_t instr)
 {
   /* 1101 000x xxxx xxxx - conditional branch
      1101 001x xxxx xxxx - conditional branch
@@ -834,7 +834,7 @@ static int thumb_condbranch(ARMSTATE *state, uint32_t instr)
   strcpy(state->text, "b");
   unsigned cond = FIELD(instr, 8, 4);
   if (cond >= sizearray(conditions))
-    return 0;
+    return false;
   strcat(state->text, conditions[cond]);
   padinstr(state->text);
   int32_t address = FIELD(instr, 0, 8);
@@ -843,10 +843,10 @@ static int thumb_condbranch(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%07x", address);
   mark_address_type(state, address, POOL_CODE);
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_service(ARMSTATE *state, uint32_t instr)
+static bool thumb_service(ARMSTATE *state, uint32_t instr)
 {
   /* 1101 1111 xxxx xxxx */
   strcpy(state->text, "svc");
@@ -854,10 +854,10 @@ static int thumb_service(ARMSTATE *state, uint32_t instr)
   padinstr(state->text);
   sprintf(tail(state->text), "#%u", FIELD(instr, 0, 8));
   state->size = 2;
-  return 1;
+  return true;
 }
 
-static int thumb_branch(ARMSTATE *state, uint32_t instr)
+static bool thumb_branch(ARMSTATE *state, uint32_t instr)
 {
   /* 1110 0xxx xxxx xxxx - unconditional branch */
   strcpy(state->text, "b");
@@ -869,7 +869,7 @@ static int thumb_branch(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%07x", address);
   mark_address_type(state, address, POOL_CODE);
   state->size = 2;
-  return 1;
+  return true;
 }
 
 /* helper function, for special expansion rules for "modified immediate" encodings */
@@ -930,7 +930,7 @@ static const char *decode_imm_shift(int type, int count)
   return field;
 }
 
-static int thumb2_constshift(ARMSTATE *state, uint32_t instr)
+static bool thumb2_constshift(ARMSTATE *state, uint32_t instr)
 {
   /* 1110 101x xxxx xxxx - data processing, constant shift */
   int Rm = FIELD(instr, 0, 4);
@@ -994,13 +994,13 @@ static int thumb2_constshift(ARMSTATE *state, uint32_t instr)
     break;
   case 6:
     if (setflags)
-      return 0; /* undefined instruction */
+      return false; /* undefined instruction */
     if (shifttype == 0)
       strcpy(state->text, "pkhbt");
     else if (shifttype == 2)
       strcpy(state->text, "pkhtp");
     else
-      return 0;
+      return false;
     break;
   case 8:
     if (Rd == 15 && setflags) {
@@ -1028,7 +1028,7 @@ static int thumb2_constshift(ARMSTATE *state, uint32_t instr)
     strcpy(state->text, "rsb");
     break;
   default:
-    return 0;
+    return false;
   }
   if (setflags)
     strcat(state->text, "s");
@@ -1050,17 +1050,17 @@ static int thumb2_constshift(ARMSTATE *state, uint32_t instr)
   }
 
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_regshift_sx(ARMSTATE *state, uint32_t instr)
+static bool thumb2_regshift_sx(ARMSTATE *state, uint32_t instr)
 {
   /* 1111 1010 0xxx xxxx - register-controlled shift
                          - sign or zero extension with optional addition
      (the difference between the two is in the second word of the 32-bit
      instruction; the pattern matching only looks at the first word) */
   if ((instr & 0x0000f000) != 0x0000f000)
-    return 0;   /* must be set, otherwise undefined instruction */
+    return false;   /* must be set, otherwise undefined instruction */
   int Rn = FIELD(instr, 16, 4);
   int Rd = FIELD(instr, 8, 4);
   int Rm = FIELD(instr, 0, 4);
@@ -1106,7 +1106,7 @@ static int thumb2_regshift_sx(ARMSTATE *state, uint32_t instr)
         strcpy(state->text, "uxtab");
       break;
     default:
-      return 0;
+      return false;
     }
     add_it_cond(state, 0);
     padinstr(state->text);
@@ -1120,7 +1120,7 @@ static int thumb2_regshift_sx(ARMSTATE *state, uint32_t instr)
   } else {
     /* register-controlled shift */
     if ((instr & 0x00000070) != 0)
-      return 0; /* must be clear, otherwise undefined instruction */
+      return false;   /* must be clear, otherwise undefined instruction */
     strcpy(state->text, shift_type(FIELD(instr, 21, 2)));
     if (BIT_SET(instr, 20))
       strcat(state->text, "s");
@@ -1130,17 +1130,17 @@ static int thumb2_regshift_sx(ARMSTATE *state, uint32_t instr)
             register_name(Rm));
   }
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_simd_misc(ARMSTATE *state, uint32_t instr)
+static bool thumb2_simd_misc(ARMSTATE *state, uint32_t instr)
 {
   /* 1111 1010 1xxx xxxx - SIMD add or subtract
                          - other three-register data processing
      (the difference between the two is in the second word of the 32-bit
      instruction; the pattern matching only looks at the first word) */
   if ((instr & 0x0000f000) != 0x0000f000)
-    return 0; /* must be set, otherwise undefined instruction */
+    return false;   /* must be set, otherwise undefined instruction */
   int opc = FIELD(instr, 20, 3);
   int Rn = FIELD(instr, 16, 4);
   int Rd = FIELD(instr, 8, 4);
@@ -1168,7 +1168,7 @@ static int thumb2_simd_misc(ARMSTATE *state, uint32_t instr)
       strcpy(state->text, "uh");
       break;
     default:
-      return 0;
+      return false;
     }
     switch (opc) {
     case 0:
@@ -1190,7 +1190,7 @@ static int thumb2_simd_misc(ARMSTATE *state, uint32_t instr)
       strcat(state->text, "sax");
       break;
     default:
-      return 0;
+      return false;
     }
     add_it_cond(state, 0);
     padinstr(state->text);
@@ -1236,7 +1236,7 @@ static int thumb2_simd_misc(ARMSTATE *state, uint32_t instr)
       Rn = -1;  /* Rn should be Rm */
       break;
     default:
-      return 0;
+      return false;
     }
     add_it_cond(state, 0);
     padinstr(state->text);
@@ -1247,10 +1247,10 @@ static int thumb2_simd_misc(ARMSTATE *state, uint32_t instr)
               register_name(Rm));
   }
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
+static bool thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
 {
   /* 1111 1011 0xxx xxxx - 32-bit multiplies and sum of absolute differences,
                            with or without accumulate */
@@ -1269,7 +1269,7 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
     else if (opc2 == 0 && Ra == 15)
       strcpy(state->text, "mul");
     else
-      return 0;
+      return false;
     break;
   case 1:
     if (opc2 <= 3 && Ra != 15) {
@@ -1281,7 +1281,7 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
       strcat(state->text, (opc2 & 2) ? "t" : "b");
       strcat(state->text, (opc2 & 1) ? "t" : "b");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 2:
@@ -1294,7 +1294,7 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
       if (opc2 == 1)
         strcat(state->text, "x");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 3:
@@ -1305,7 +1305,7 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
       strcpy(state->text, "smuw");
       strcat(state->text, (opc2 & 1) ? "t" : "b");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 4:
@@ -1318,7 +1318,7 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
       if (opc2 == 1)
         strcat(state->text, "x");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 5:
@@ -1331,7 +1331,7 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
       if (opc2 == 1)
         strcat(state->text, "r");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 6:
@@ -1340,12 +1340,12 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
       if (opc2 == 1)
         strcat(state->text, "r");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 7:
     if (opc2 != 0)
-      return 0;
+      return false;
     if (Ra == 15)
       strcpy(state->text, "usad8");
     else
@@ -1361,10 +1361,10 @@ static int thumb2_mult32_acc(ARMSTATE *state, uint32_t instr)
     sprintf(tail(state->text), "%s, %s, %s, %s", register_name(Rd), register_name(Rn),
             register_name(Rm), register_name(Ra));
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
+static bool thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
 {
   /* 1111 1011 1xxx xxxx -64-bit multiplies and multiply-accumulates; divides */
   int opc = FIELD(instr, 20, 3);
@@ -1378,25 +1378,25 @@ static int thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
     if (opc2 == 0)
       strcpy(state->text, "smull");
     else
-      return 0;
+      return false;
     break;
   case 1:
     if (opc2 == 15)
       strcpy(state->text, "sdiv");
     else
-      return 0;
+      return false;
     break;
   case 2:
     if (opc2 == 0)
       strcpy(state->text, "umull");
     else
-      return 0;
+      return false;
     break;
   case 3:
     if (opc2 == 15)
       strcpy(state->text, "udiv");
     else
-      return 0;
+      return false;
     break;
   case 4:
     strcpy(state->text, "smlal");
@@ -1408,7 +1408,7 @@ static int thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
       if (opc2 & 1)
         strcat(state->text, "x");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 5:
@@ -1417,7 +1417,7 @@ static int thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
       if (opc2 & 1)
         strcat(state->text, "x");
     } else {
-      return 0;
+      return false;
     }
     break;
   case 6:
@@ -1426,10 +1426,10 @@ static int thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
     else if (opc2 == 6)
       strcpy(state->text, "umaal");
     else
-      return 0;
+      return false;
     break;
   default:
-    return 0;
+    return false;
   }
   add_it_cond(state, 0);
   padinstr(state->text);
@@ -1440,10 +1440,10 @@ static int thumb2_mult64_acc(ARMSTATE *state, uint32_t instr)
     sprintf(tail(state->text), "%s, %s, %s, %s", register_name(RdLo), register_name(RdHi),
             register_name(Rn), register_name(Rm));
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
+static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
 {
   /* 1111 0xxx xxxx xxxx - branches, misscellaneous control */
   if (BIT_SET(instr, 15)) {
@@ -1467,14 +1467,14 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
         break;
       case 4:
         if (instr & 0x01)
-          return 0; /* low bit of address must be clear for switch to ARM */
+          return false;   /* low bit of address must be clear for switch to ARM */
         strcpy(state->text, "blx");
         break;
       case 5:
         strcpy(state->text, "bl");
         break;
       default:
-        return 0;
+        return false;
       }
       add_it_cond(state, 0);
       padinstr(state->text);
@@ -1504,7 +1504,7 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
     } else if (BIT_SET(instr, 26)) {
       /* secure monitor interrupt */
       if (FIELD(instr, 12, 4) != 8)
-        return 0; /* reserved or permanently undefined instructions */
+        return false;   /* reserved or permanently undefined instructions */
       strcpy(state->text, "msr");
       add_it_cond(state, 0);
       padinstr(state->text);
@@ -1532,7 +1532,7 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
           else if (opc < sizearray(mnemonics))
             strcpy(state->text, mnemonics[opc]);
           else
-            return 0;
+            return false;
           add_it_cond(state, 0);
           if ((opc & 0xf0) == 0xf0) {
             padinstr(state->text);
@@ -1654,7 +1654,7 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
         strcpy(state->text, "rsb");
         break;
       default:
-        return 0;
+        return false;
       }
       assert(Rn >= 0 || Rd >= 0);
       if (BIT_SET(instr, 20) && Rd >= 0)
@@ -1736,7 +1736,7 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
         strcpy(state->text, "ubfx");  /* format: ubfx  Rd,Rn,#lsb,#msb+1 */
         break;
       default:
-        return 0;
+        return false;
       }
       add_it_cond(state, 0);
       padinstr(state->text);
@@ -1766,14 +1766,14 @@ static int thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
         break;
       }
     } else {
-      return 0;
+      return false;
     }
   }
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_loadstor(ARMSTATE *state, uint32_t instr)
+static bool thumb2_loadstor(ARMSTATE *state, uint32_t instr)
 {
   /* 1111 100x xxxx xxxx - load and store singla data item, memory hints */
   int Rt = FIELD(instr, 12, 4);
@@ -1793,14 +1793,14 @@ static int thumb2_loadstor(ARMSTATE *state, uint32_t instr)
     writeback = FIELD(instr, 8, 1);
   } else {
     if ((instr & 0x000007c0) != 0)
-      return 0;
+      return false;
     Rm = FIELD(instr, 0, 4);
     shift = FIELD(instr, 4, 2);
   }
   if (upwards == 0)
     imm = -imm;
   if (BIT_SET(instr, 24) && size == 2)
-    return 0; /* sign-extend must be false for 32-bit loads/stores */
+    return false;   /* sign-extend must be false for 32-bit loads/stores */
 
   int hint = 0;
   if (BIT_SET(instr, 20)) {
@@ -1851,10 +1851,10 @@ static int thumb2_loadstor(ARMSTATE *state, uint32_t instr)
     }
   }
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_loadstor2(ARMSTATE *state, uint32_t instr)
+static bool thumb2_loadstor2(ARMSTATE *state, uint32_t instr)
 {
   /* 1110 100x x1xx xxxx - load and store, double and exclusive, and table branch */
   int Rn = FIELD(instr, 16, 4);
@@ -1957,14 +1957,14 @@ static int thumb2_loadstor2(ARMSTATE *state, uint32_t instr)
               register_name(Rt2), register_name(Rn));
       break;
     default:
-      return 0;
+      return false;
     }
   }
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_loadstor_mul(ARMSTATE *state, uint32_t instr)
+static bool thumb2_loadstor_mul(ARMSTATE *state, uint32_t instr)
 {
   /* 1110 100x x0xx xxxx - load and store multiple, rfe and srs */
   int cat = FIELD(instr, 23, 2);
@@ -2010,10 +2010,10 @@ static int thumb2_loadstor_mul(ARMSTATE *state, uint32_t instr)
       strcat(state->text, "!");
   }
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_co_loadstor(ARMSTATE *state, uint32_t instr)
+static bool thumb2_co_loadstor(ARMSTATE *state, uint32_t instr)
 {
   /* 111x 110x xxxx xxxx - coprocessor load/store and mcrr/mrrc register transfers */
   int opc = FIELD(instr, 21, 4);
@@ -2022,7 +2022,7 @@ static int thumb2_co_loadstor(ARMSTATE *state, uint32_t instr)
   else if (opc != 0)
     strcpy(state->text, BIT_SET(instr, 20) ? "ldc" : "stc");
   else
-    return 0;
+    return false;
   if (BIT_SET(instr, 28))
     strcat(state->text, "2");
   if (opc != 2 && BIT_SET(instr, 22))
@@ -2049,10 +2049,10 @@ static int thumb2_co_loadstor(ARMSTATE *state, uint32_t instr)
   }
 
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_co_dataproc(ARMSTATE *state, uint32_t instr)
+static bool thumb2_co_dataproc(ARMSTATE *state, uint32_t instr)
 {
   /* 111x 1110 xxx0 xxxx - coprocessor */
   /* CDP / CDP2 */
@@ -2065,14 +2065,14 @@ static int thumb2_co_dataproc(ARMSTATE *state, uint32_t instr)
           FIELD(instr, 20, 4), FIELD(instr, 12, 4), FIELD(instr, 16, 4),
           FIELD(instr, 0, 4), FIELD(instr, 5, 3));
   state->size = 4;
-  return 1;
+  return true;
 }
 
-static int thumb2_co_trans(ARMSTATE *state, uint32_t instr)
+static bool thumb2_co_trans(ARMSTATE *state, uint32_t instr)
 {
   /* 111x 1110 xxx1 xxxx - coprocessor ARM register to coprocessor register */
   if (BIT_CLR(instr, 4))
-    return 0;
+    return false;
 
   /* mrc and mcr coprocessor register transfers */
   strcpy(state->text, BIT_SET(instr, 20) ? "mrc" : "mcr");
@@ -2087,7 +2087,7 @@ static int thumb2_co_trans(ARMSTATE *state, uint32_t instr)
           FIELD(instr, 21, 3), Rt_name, FIELD(instr, 16, 4),
           FIELD(instr, 0, 4), FIELD(instr, 5, 3));
   state->size = 4;
-  return 1;
+  return true;
 }
 
 static const ENCODEMASK16 thumb_table[] = {
@@ -2142,13 +2142,13 @@ static const ENCODEMASK16 thumb_table[] = {
   { 0xef10, 0xee10, thumb2_co_trans },  /* 32-bit Thumb2, co-processor register transfers */
 };
 
-static int thumb_is_32bit(uint16_t w)
+static bool thumb_is_32bit(uint16_t w)
 {
   if ((w & 0xf800)== 0xe000)
-    return 0; /* 16-bit unconditional branch */
+    return false; /* 16-bit unconditional branch */
   if ((w & 0xe000) == 0xe000)
-    return 1; /* 32-bit Thumb2 */
-  return 0;   /* 16-bit Thumb */
+    return true;  /* 32-bit Thumb2 */
+  return false;   /* 16-bit Thumb */
 }
 
 
@@ -2245,12 +2245,12 @@ static int arm_opcode_form(int opc)
   return 3;   /* Rd, Rn, shifter_operand */
 }
 
-static int arm_dataproc_imsh(ARMSTATE *state, uint32_t instr)
+static bool arm_dataproc_imsh(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 000x xxxx xxxx : xxxx xxxx xxx0 xxxx - data processing immediate shift */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
 
   int shifttype = FIELD(instr, 5, 2);
   int shiftcount = FIELD(instr, 7, 5);
@@ -2260,7 +2260,7 @@ static int arm_dataproc_imsh(ARMSTATE *state, uint32_t instr)
   else
     strcpy(state->text, arm_opcode_name(opc, BIT_CLR(instr, 20), FIELD(instr, 5, 3)));
   if (strlen(state->text) == 0)
-    return 0;
+    return false;
   add_condition(state, cond);
   if (BIT_SET(instr, 20) && !(opc >= 8 && opc < 12))
     strcat(state->text, "s");
@@ -2323,20 +2323,20 @@ static int arm_dataproc_imsh(ARMSTATE *state, uint32_t instr)
     }
   }
 
-  return 1;
+  return true;
 }
 
-static int arm_dataproc_rxsh(ARMSTATE *state, uint32_t instr)
+static bool arm_dataproc_rxsh(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 000x xxx xxxx : xxxx xxxx 0xx1 xxxx - data processing register shift */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
 
   int opc = FIELD(instr, 21, 4);
   strcpy(state->text, arm_opcode_name(opc, 2*BIT_CLR(instr, 20), FIELD(instr, 5, 3)));
   if (strlen(state->text) == 0)
-    return 0;
+    return false;
   add_condition(state, cond);
   if (BIT_SET(instr, 20) && !(opc >= 8 && opc < 12))
     strcat(state->text, "s");
@@ -2376,15 +2376,15 @@ static int arm_dataproc_rxsh(ARMSTATE *state, uint32_t instr)
             register_name(FIELD(instr, 8, 4)));
   }
 
-  return 1;
+  return true;
 }
 
-static int arm_mult_loadstor(ARMSTATE *state, uint32_t instr)
+static bool arm_mult_loadstor(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 000x xxxx xxxx : xxxx xxxx 1xx1 xxxx - multiplies, extra load/stores */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
 
   int opc2 = FIELD(instr, 4, 4);
   if (BIT_CLR(instr, 24) && opc2 == 9) {
@@ -2449,7 +2449,7 @@ static int arm_mult_loadstor(ARMSTATE *state, uint32_t instr)
         strcpy(state->text, BIT_CLR(instr, 5) ? "ldrd" : "strd");
       break;
     default:
-      return 0;
+      return false;
     }
     add_condition(state, cond);
     padinstr(state->text);
@@ -2487,20 +2487,20 @@ static int arm_mult_loadstor(ARMSTATE *state, uint32_t instr)
     }
   }
 
-  return 1;
+  return true;
 }
 
-static int arm_dataproc_imm(ARMSTATE *state, uint32_t instr)
+static bool arm_dataproc_imm(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 001x xxxx xxxx : xxxx xxxx xxxx xxxx - data processing immediate */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
 
   int opc = FIELD(instr, 21, 4);
   strcpy(state->text, arm_opcode_name(opc, 4*BIT_CLR(instr, 20), FIELD(instr, 5, 3)));
   if (strlen(state->text) == 0)
-    return 0;
+    return false;
   add_condition(state, cond);
   if (BIT_SET(instr, 20))
     strcat(state->text, "s");
@@ -2526,10 +2526,10 @@ static int arm_dataproc_imm(ARMSTATE *state, uint32_t instr)
             register_name(FIELD(instr, 16, 4)), imm);
   }
 
-  return 1;
+  return true;
 }
 
-static int arm_loadstor_imm(ARMSTATE *state, uint32_t instr)
+static bool arm_loadstor_imm(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 010x xxxx xxxx : xxxx xxxx xxxx xxxx - load/store immediate offset */
   int cond = FIELD(instr, 28, 4);
@@ -2562,15 +2562,15 @@ static int arm_loadstor_imm(ARMSTATE *state, uint32_t instr)
     mark_address_type(state, (uint32_t)imm, POOL_LITERAL);
   }
   append_comment_hex(state, (uint32_t)imm);
-  return 1;
+  return true;
 }
 
-static int arm_loadstor_reg(ARMSTATE *state, uint32_t instr)
+static bool arm_loadstor_reg(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 011x xxxx xxxx : xxxx xxxx xxx0 xxxx - load/store register offset */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
   strcpy(state->text, BIT_SET(instr, 20) ? "ldr" : "str");
   add_condition(state, cond);
   if (BIT_SET(instr, 22))
@@ -2588,15 +2588,15 @@ static int arm_loadstor_reg(ARMSTATE *state, uint32_t instr)
     sprintf(tail(state->text), ", %s", decode_imm_shift(shifttype, shiftcount));
 
   strcat(state->text, "]");
-  return 1;
+  return true;
 }
 
-static int arm_media(ARMSTATE *state, uint32_t instr)
+static bool arm_media(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 011x xxxx xxxx : xxxx xxxx xxx1 xxxx - media instructions */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
 
   int Rm = FIELD(instr, 0, 4);
   int Rd = FIELD(instr, 12, 4);
@@ -2647,7 +2647,7 @@ static int arm_media(ARMSTATE *state, uint32_t instr)
       strcat(state->text, "sub8");
       break;
     default:
-      return 0;
+      return false;
     }
     add_condition(state, cond);
     padinstr(state->text);
@@ -2724,7 +2724,7 @@ static int arm_media(ARMSTATE *state, uint32_t instr)
         strcpy(state->text, (Rn == 15) ? "xth" : "xtah");
         break;
       default:
-        return 0;
+        return false;
       }
       add_condition(state, cond);
       padinstr(state->text);
@@ -2738,7 +2738,7 @@ static int arm_media(ARMSTATE *state, uint32_t instr)
       if (rot != 0)
         sprintf(tail(state->text), ", ror #%d", 8 * rot);
     } else {
-      return 0; /* not a valid instruction pattern */
+      return false;   /* not a valid instruction pattern */
     }
   } else if (cat == 2) {
     /* multiplies type 3 */
@@ -2754,7 +2754,7 @@ static int arm_media(ARMSTATE *state, uint32_t instr)
     } else if (opc1 == 4) {
       strcpy(state->text, (opc2 == 0) ? "smlald" : "smlsld");
     } else {
-      return 0; /* not a valid instruction pattern */
+      return false;   /* not a valid instruction pattern */
     }
     if (BIT_SET(instr, 5))
       strcat(state->text, "x");
@@ -2786,15 +2786,15 @@ static int arm_media(ARMSTATE *state, uint32_t instr)
               register_name(Rm), register_name(Rs), register_name(Rn));
   }
 
-  return 1;
+  return true;
 }
 
-static int arm_loadstor_mult(ARMSTATE *state, uint32_t instr)
+static bool arm_loadstor_mult(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 100x xxxx xxxx : xxxx xxxx xxxx xxxx - load/store multiple */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
 
   int Rn = FIELD(instr, 16, 4);
   int alt_syntax = (Rn == 13 && BIT_SET(instr, 21));
@@ -2825,15 +2825,15 @@ static int arm_loadstor_mult(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 22))
     strcat(state->text, "^");
 
-  return 1;
+  return true;
 }
 
-static int arm_branch(ARMSTATE *state, uint32_t instr)
+static bool arm_branch(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 101x xxxx xxxx : xxxx xxxx xxxx xxxx - branch and branch with link */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
   strcpy(state->text, "b");
   if (BIT_SET(instr, 24))
     strcat(state->text, "l");
@@ -2845,10 +2845,10 @@ static int arm_branch(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%07x", address);
   append_comment_symbol(state, address);
   mark_address_type(state, address, POOL_CODE);
-  return 1;
+  return true;
 }
 
-static int arm_co_loadstor(ARMSTATE *state, uint32_t instr)
+static bool arm_co_loadstor(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 110x xxxx xxxx : xxxx xxxx xxxx xxxx - coprocessor load/store and
      double register transfers */
@@ -2888,10 +2888,10 @@ static int arm_co_loadstor(ARMSTATE *state, uint32_t instr)
     }
   }
 
-  return 1;
+  return true;
 }
 
-static int arm_co_dataproc(ARMSTATE *state, uint32_t instr)
+static bool arm_co_dataproc(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 1110 xxxx xxxx : xxxx xxxx xxx0 xxxx - coprocessor data processing */
   int cond = FIELD(instr, 28, 4);
@@ -2904,10 +2904,10 @@ static int arm_co_dataproc(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%u, %u, cr%u, cr%u, cr%u, {%u}", FIELD(instr, 8, 4),
           FIELD(instr, 20, 4), FIELD(instr, 12, 4), FIELD(instr, 16, 4),
           FIELD(instr, 0, 4), FIELD(instr, 5, 3));
-  return 1;
+  return true;
 }
 
-static int arm_co_trans(ARMSTATE *state, uint32_t instr)
+static bool arm_co_trans(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 1110 xxxx xxxx : xxxx xxxx xxx1 xxxx - coprocessor register transfers */
   int cond = FIELD(instr, 28, 4);
@@ -2920,20 +2920,20 @@ static int arm_co_trans(ARMSTATE *state, uint32_t instr)
   sprintf(tail(state->text), "%u, %u, %s, cr%u, cr%u, {%u}", FIELD(instr, 8, 4),
           FIELD(instr, 21, 3), register_name(FIELD(instr, 12, 4)),
           FIELD(instr, 16, 4), FIELD(instr, 0, 4), FIELD(instr, 5, 3));
-  return 1;
+  return true;
 }
 
-static int arm_softintr(ARMSTATE *state, uint32_t instr)
+static bool arm_softintr(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 1111 xxxx xxxx : xxxx xxxx xxxx xxxx - software interrupt */
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
-    return 0;
+    return false;
   strcpy(state->text, "svc");
   add_condition(state, cond);
   padinstr(state->text);
   sprintf(tail(state->text), "0x%08x", FIELD(instr, 0, 24));
-  return 1;
+  return true;
 }
 
 static const ENCODEMASK32 arm_table[] = {
@@ -2975,9 +2975,11 @@ static void dump_word(ARMSTATE *state, uint32_t w)
  *  instruction stored w:w2 (w is the high halfword, w2 is the low halfword).
  *
  *  If no instruction matches, a constant data declaration is assumed (e.g. the
- *  literal pool). The function also returns 0 in that case.
+ *  literal pool). The function also returns false in that case. However, if the
+ *  address being decoded is known to be in the literal pool, this function
+ *  returns true.
  *
- *  On success, the function returns 1.
+ *  On success, the function returns true.
  *
  *  The instruction (in the Thumb state) is set to 2 or 4 (depending on the size
  *  of the instruction). For a data declaration (literal pool), the size is set
@@ -2986,7 +2988,7 @@ static void dump_word(ARMSTATE *state, uint32_t w)
  *  On every call to this function, the function advances the internal address
  *  (using the instruction size set on the previous call).
  */
-int disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
+bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
 {
   assert(state != NULL);
   state->address += state->size;  /* increment address from previous step */
@@ -2997,13 +2999,13 @@ int disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
   if (lookup_address_type(state, state->address) == POOL_LITERAL) {
     state->size = 4;
     dump_word(state, ((uint32_t)hw2 << 16) | hw);
-    return 1;
+    return true;
   }
 
   uint32_t instr = thumb_is_32bit(hw) ? ((uint32_t)hw << 16) | hw2 : hw;
   for (size_t idx = 0; idx < sizearray(thumb_table); idx++) {
     if ((hw & thumb_table[idx].mask) == thumb_table[idx].match) {
-      int result = thumb_table[idx].func(state, instr);
+      bool result = thumb_table[idx].func(state, instr);
       if (result) {
         add_insert_prefix(state, instr);
         if (state->it_mask != 0) {      /* handle if-then state */
@@ -3032,10 +3034,10 @@ int disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
     state->size = 2;
     dump_word(state, instr);
   }
-  return 0;
+  return false;
 }
 
-int disasm_arm(ARMSTATE *state, uint32_t w)
+bool disasm_arm(ARMSTATE *state, uint32_t w)
 {
   assert(state != NULL);
   state->address += state->size;  /* increment address from previous step */
@@ -3047,12 +3049,12 @@ int disasm_arm(ARMSTATE *state, uint32_t w)
 
   if (lookup_address_type(state, state->address) == POOL_LITERAL) {
     dump_word(state, w);
-    return 1;
+    return true;
   }
 
   for (size_t idx = 0; idx < sizearray(arm_table); idx++) {
     if ((w & arm_table[idx].mask) == arm_table[idx].match) {
-      int result = arm_table[idx].func(state, w);
+      bool result = arm_table[idx].func(state, w);
       if (result) {
         add_insert_prefix(state, w);
         return result;
@@ -3062,7 +3064,7 @@ int disasm_arm(ARMSTATE *state, uint32_t w)
   }
 
   dump_word(state, w);
-  return 0;
+  return false;
 }
 
 /** disasm_init() initializes the disassembler and sets options.
@@ -3125,6 +3127,7 @@ void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size)
     state->poolcount -= num;
     if (num > 0 && idx + num < state->poolcount)
       memmove(&state->codepool[idx], &state->codepool[idx + num], (state->poolcount - idx) * sizeof(ARMPOOL));
+    type = state->codepool[idx].type;
   }
 }
 
@@ -3233,8 +3236,21 @@ const char *disasm_result(ARMSTATE *state, int *size)
   return state->text;
 }
 
-void disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
-                   DISASM_CALLBACK callback, int mode)
+/** disasm_buffer() disassembles a buffer with machine code, and calls a
+ *  callback function for every line of output (typically containing a single
+ *  instruction).
+ *
+ *  \param state      The decoder state.
+ *  \param buffer     The buffer with machine code.
+ *  \param buffersize The size of the machine code buffer.
+ *  \param mode       ARMMODE_ARM or ARMMODE_THUMB; may also be set to
+ *                    ARMMODE_UNKNOWN if symbols with a known mode have been
+ *                    added.
+ *  \param callback   The function that is called for each line of output.
+ *  \param user       This parameter is passed to the callback function.
+ */
+bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
+                   int mode, DISASM_CALLBACK callback, void *user)
 {
   assert(state != NULL);
   assert(buffer != NULL);
@@ -3250,7 +3266,7 @@ void disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
       mode = state->symbols[i].mode;
   }
   if (mode == ARMMODE_UNKNOWN)
-    mode = ARMMODE_THUMB; /* no mode given, and no mode on symbols -> make arbotrary choice */
+    mode = ARMMODE_THUMB; /* no mode given, and no mode on symbols -> make arbitrary choice */
 
   for ( ;; ) {
     if (mode == ARMMODE_ARM) {
@@ -3270,7 +3286,8 @@ void disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
       }
       disasm_thumb(state, hw, hw2);
     }
-    callback(state->text);
+    if (!callback(state->text, user))
+      return false;
     buffer += state->size;
     buffersize -= state->size;
     /* check for mode switch */
@@ -3283,5 +3300,6 @@ void disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
       }
     }
   }
+  return true;
 }
 

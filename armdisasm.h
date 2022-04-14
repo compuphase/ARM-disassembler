@@ -18,6 +18,7 @@
 #ifndef _ARMDISASM_H
 #define _ARMDISASM_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
@@ -73,13 +74,13 @@ enum {
 void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode);
 void disasm_address(ARMSTATE *state, uint32_t address);
 
-int disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2);
-int disasm_arm(ARMSTATE *state, uint32_t w);
+bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2);
+bool disasm_arm(ARMSTATE *state, uint32_t w);
 const char *disasm_result(ARMSTATE *state, int *size);
 
-typedef void (*DISASM_CALLBACK)(const char *text);
-void disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
-                   DISASM_CALLBACK callback, int mode);
+typedef bool (*DISASM_CALLBACK)(const char *text, void *user);
+bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
+                   int mode, DISASM_CALLBACK callback, void *user);
 
 #endif /* _ARMDISASM_H */
 
