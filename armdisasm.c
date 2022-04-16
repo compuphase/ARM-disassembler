@@ -490,7 +490,7 @@ static bool thumb_load_lit(ARMSTATE *state, uint32_t instr)
   padinstr(state->text);
   uint32_t offs = 4 * FIELD(instr, 0, 8);
   sprintf(tail(state->text), "%s, [pc, #%u]", register_name(FIELD(instr, 8, 3)), offs);
-  offs += state->address + 2;
+  offs += state->address + 4;
   append_comment_hex(state, offs);
   mark_address_type(state, offs, POOL_LITERAL);
   state->size = 2;
@@ -3262,7 +3262,7 @@ bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
     {}
   if (i < state->symbolcount) {
     symbolindex = i;
-    if (mode == ARMMODE_UNKNOWN)
+    if (state->symbols[i].mode != ARMMODE_UNKNOWN)
       mode = state->symbols[i].mode;
   }
   if (mode == ARMMODE_UNKNOWN)
@@ -3286,8 +3286,10 @@ bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
       }
       disasm_thumb(state, hw, hw2);
     }
-    if (!callback(state->text, user))
+    if (!callback(state->address, state->text, user))
       return false;
+    if (state->size > buffersize)
+      break;
     buffer += state->size;
     buffersize -= state->size;
     /* check for mode switch */
