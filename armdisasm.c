@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 #include <assert.h>
+#include <ctype.h>
 #include <malloc.h>
 #include <stdio.h>
 #include <string.h>
@@ -45,8 +46,11 @@ enum {
 
 #define ROR32(word, bits)             (((word) >> (bits)) | ((word) << (32 - (bits))))
 #define SIGN_EXT(word, bits)          if ((word) & (1 << (bits - 1))) word |= ~0uL << (bits)
+#define ALIGN4(addr)                  ((addr) & ~0x03)
 
 #define sizearray(a)                  (sizeof(a) / sizeof((a)[0]))
+
+static int get_symbol(ARMSTATE *state, uint32_t address);
 
 static char const *conditions[] = {
   "eq", "ne",   /* Z flag */
@@ -238,7 +242,7 @@ static void add_insert_prefix(ARMSTATE *state, uint32_t instr)
   }
 }
 
-static void append_comment(ARMSTATE *state, const char *text)
+static void append_comment(ARMSTATE *state, const char *text, const char *separator)
 {
   assert(state != NULL);
   assert(state->add_cmt);
@@ -249,8 +253,12 @@ static void append_comment(ARMSTATE *state, const char *text)
     padding = 2;
 
   char prefix[40];
-  memset(prefix, ' ', padding);
-  strcpy(prefix + padding, "; ");
+  if (separator == NULL) {
+    memset(prefix, ' ', padding);
+    strcpy(prefix + padding, "; ");
+  } else {
+    strcpy(prefix, separator);
+  }
 
   size_t size = sizearray(state->text);
   if (state->add_addr)
@@ -269,7 +277,7 @@ static void append_comment_hex(ARMSTATE *state, uint32_t value)
   if (state->add_cmt && value >= 10) {
     char hex[40];
     sprintf(hex, "0x%x", value);
-    append_comment(state, hex);
+    append_comment(state, hex, NULL);
   }
 }
 
@@ -277,11 +285,9 @@ static void append_comment_symbol(ARMSTATE *state, uint32_t address)
 {
   assert(state != NULL);
   if (state->add_cmt && state->symbolcount > 0) {
-    int i;
-    for (i = 0; i < state->symbolcount && state->symbols[i].address < address; i++)
-      {}
-    if (i < state->symbolcount && state->symbols[i].address == address)
-      append_comment(state, state->symbols[i].name);
+    int i = get_symbol(state, address);
+    if (i >= 0)
+      append_comment(state, state->symbols[i].name, NULL);
   }
 }
 
@@ -490,9 +496,9 @@ static bool thumb_load_lit(ARMSTATE *state, uint32_t instr)
   padinstr(state->text);
   uint32_t offs = 4 * FIELD(instr, 0, 8);
   sprintf(tail(state->text), "%s, [pc, #%u]", register_name(FIELD(instr, 8, 3)), offs);
-  offs += state->address + 4;
-  append_comment_hex(state, offs);
-  mark_address_type(state, offs, POOL_LITERAL);
+  state->ldr_addr = ALIGN4(state->address + 4) + offs;
+  append_comment_hex(state, state->ldr_addr);
+  mark_address_type(state, state->ldr_addr, POOL_LITERAL);
   state->size = 2;
   return true;
 }
@@ -579,6 +585,8 @@ static bool thumb_add_sp_pc_imm(ARMSTATE *state, uint32_t instr)
   padinstr(state->text);
   uint32_t imm = FIELD(instr, 0, 7);
   sprintf(tail(state->text), "%s, sp, #%u", register_name(FIELD(instr, 8, 3)), imm);
+  if (BIT_CLR(instr, 11))
+    imm += ALIGN4(state->add_addr + 4); /* as it might be a code address, we cannot mark it as a literal pool */
   append_comment_hex(state, imm);
   state->size = 2;
   return true;
@@ -1460,7 +1468,7 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
       int32_t offset = (offs1 << 1) | (offs2 << 12) | (j2 << 22) | (j1 << 23);
       if (s)
         offset |= 0xff000000;
-      int opc = FIELD(instr, 11, 3) & 0x05;
+      int opc = FIELD(instr, 12, 3) & 0x05;
       switch (opc) {
       case 1:
         strcpy(state->text, "b");
@@ -1478,7 +1486,10 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
       }
       add_it_cond(state, 0);
       padinstr(state->text);
-      int32_t address = state->address + 4 + offset;
+      int32_t address = state->address + 4;
+      if (opc == 4)
+        address = ALIGN4(state->address + 4); /* BLX target is aligned to 32-bit address */
+      address += offset; 
       sprintf(tail(state->text), "%07x", address);
       append_comment_symbol(state, address);
       mark_address_type(state, address, POOL_CODE);
@@ -1830,9 +1841,9 @@ static bool thumb2_loadstor(ARMSTATE *state, uint32_t instr)
     sprintf(tail(state->text), "%s, ", register_name(Rt));
   if (Rn == 15) {
     sprintf(tail(state->text), "[pc, #%ld]", imm);
-    imm += state->address + 4;
-    append_comment_hex(state, (uint32_t)imm);
-    mark_address_type(state, (uint32_t)imm, POOL_LITERAL);
+    state->ldr_addr = ALIGN4(state->address + 4) + imm;
+    append_comment_hex(state, state->ldr_addr);
+    mark_address_type(state, state->ldr_addr, POOL_LITERAL);
   } else {
     if (Rm >= 0 && shift >= 0) {
       sprintf(tail(state->text), "[%s, %s, lsl #%d]", register_name(Rn),
@@ -1872,6 +1883,10 @@ static bool thumb2_loadstor2(ARMSTATE *state, uint32_t instr)
     imm *= 4;
     if (BIT_CLR(instr, 23))
       imm = -imm;
+    if (BIT_SET(instr, 20) && Rn == 15) {
+      state->ldr_addr = ALIGN4(state->address + 4) + imm;
+      mark_address_type(state, state->ldr_addr, POOL_LITERAL);
+    }
     if (BIT_SET(instr, 24) || BIT_CLR(instr, 21)) {
       if (BIT_CLR(instr, 24) || imm == 0) {
         sprintf(tail(state->text), "%s, %s, [%s]", register_name(Rt),
@@ -2558,8 +2573,9 @@ static bool arm_loadstor_imm(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 21))
     strcat(state->text, "!");
   if (Rn == 15 && BIT_SET(instr, 24) && BIT_CLR(instr, 21)) {
-    imm += state->address + 4;
-    mark_address_type(state, (uint32_t)imm, POOL_LITERAL);
+    imm += ALIGN4(state->address + 4);
+    state->ldr_addr = imm;
+    mark_address_type(state, state->ldr_addr, POOL_LITERAL);
   }
   append_comment_hex(state, (uint32_t)imm);
   return true;
@@ -2952,6 +2968,19 @@ static const ENCODEMASK32 arm_table[] = {
   { 0x0f000000, 0x0f000000, arm_softintr },     /* software interrupt */
 };
 
+/** get_symbol() looks up a symbol; returns -1 if not found. The routine depends
+ *  on the list being sorted (on address).
+ */
+static int get_symbol(ARMSTATE *state, uint32_t address)
+{
+  int i;
+  for (i = 0; i < state->symbolcount && state->symbols[i].address < address; i++)
+    {}
+  if (i < state->symbolcount && state->symbols[i].address == address)
+    return i;
+  return -1;
+}
+
 static void dump_word(ARMSTATE *state, uint32_t w)
 {
   assert(state != NULL);
@@ -2964,9 +2993,42 @@ static void dump_word(ARMSTATE *state, uint32_t w)
     padinstr(state->text);
     sprintf(tail(state->text), "0x%04x", w & 0xffff);
   }
-  if (state->add_cmt) {
-    //??? check whether the value is an address of a global/static variable
-    //??? add ASCII as comment
+  if (state->add_cmt && state->size == 4) {
+    if (get_symbol(state, w) >= 0) {
+      /* the value is an address of a global/static variable */
+      append_comment_symbol(state, w);
+    } else {
+      /* check whether to add ASCII characters as comment */
+      unsigned char c[4];
+      bool all_ascii = true;
+      for (int i = 0; i < 4; i++) {
+        c[i] = (w >> 8*i) & 0xff;
+        if (!isprint(c[i]) && c[i] != '\0' && c[i] != '\n' && c[i] != '\r' && c[i] != '\t')
+          all_ascii = false;
+      }
+      if (all_ascii) {
+        char field[16];
+        strcpy(field, "\"");
+        for (int i = 0; i < 4; i++) {
+          if (c[i] == '\0') {
+            strcat(field, "\\0");
+          } else if (c[i] == '\n') {
+            strcat(field, "\\n");
+          } else if (c[i] == '\r') {
+            strcat(field, "\\r");
+          } else if (c[i] == '\t') {
+            strcat(field, "\\t");
+          } else {
+            assert(isprint(c[i]));
+            int len = strlen(field);
+            field[len] = c[i];
+            field[len + 1] = '\0';
+          }
+        }
+        strcat(field, "\"");
+        append_comment(state, field, NULL);
+      }
+    }
   }
   add_insert_prefix(state, w);
 }
@@ -2993,6 +3055,7 @@ bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
   assert(state != NULL);
   state->address += state->size;  /* increment address from previous step */
   state->arm_mode = 0;
+  state->ldr_addr = ~0;
   state->size = 0;                /* zero'ed out to help debugging */
   state->text[0] = '\0';
 
@@ -3043,8 +3106,9 @@ bool disasm_arm(ARMSTATE *state, uint32_t w)
   state->address += state->size;  /* increment address from previous step */
   state->size = 0;                /* zero'ed out to help debugging */
   state->arm_mode = 1;
-  state->text[0] = '\0';
   state->it_mask = 0;             /* irrelevant in ARM mode */
+  state->ldr_addr = ~0;
+  state->text[0] = '\0';
   state->size = 4;                /* always 32-bit in ARM mode */
 
   if (lookup_address_type(state, state->address) == POOL_LITERAL) {
@@ -3076,6 +3140,7 @@ void disasm_init(ARMSTATE *state, int flags)
 {
   assert(state != NULL);
   memset(state, 0, sizeof(ARMSTATE));
+  state->ldr_addr = ~0;
 
   if (flags & DISASM_ADDRESS)
     state->add_addr = 1;
@@ -3173,6 +3238,8 @@ void disasm_address(ARMSTATE *state, uint32_t address)
  *  \param name     Symbol name.
  *  \param address  Symbol address.
  *  \param mode     Disassenbly mode for the symbol (if known).
+ *
+ *  \note The list is kept sorted on address.
  */
 void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode)
 {
@@ -3268,32 +3335,47 @@ bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
   if (mode == ARMMODE_UNKNOWN)
     mode = ARMMODE_THUMB; /* no mode given, and no mode on symbols -> make arbitrary choice */
 
+  uint32_t start_address = state->address;  /* address pertaining to the start of the buffer */
+  const unsigned char *opc = buffer;
+  size_t remaining = buffersize;
   for ( ;; ) {
     if (mode == ARMMODE_ARM) {
-      if (buffersize < 4)
+      if (remaining < 4)
         break;
-      uint32_t w = buffer[0] | ((uint32_t)buffer[1] << 8) | ((uint32_t)buffer[2] << 16) | ((uint32_t)buffer[3] << 24);
+      uint32_t w = opc[0] | ((uint32_t)opc[1] << 8) | ((uint32_t)opc[2] << 16) | ((uint32_t)opc[3] << 24);
       disasm_arm(state, w);
     } else {
-      if (buffersize < 2)
+      if (remaining < 2)
         break;
-      uint16_t hw = buffer[0] | ((uint16_t)buffer[1] << 8);
-      uint16_t hw2 = 0;
-      if (thumb_is_32bit(hw)) {
-        if (buffersize < 4)
-          break;
-        hw2 = buffer[2] | ((uint16_t)buffer[3] << 8);
-      }
+      uint16_t hw = opc[0] | ((uint16_t)opc[1] << 8);
+      if (thumb_is_32bit(hw) && remaining < 4)
+        break;
+      uint16_t hw2 = (remaining >= 4) ? opc[2] | ((uint16_t)opc[3] << 8) : 0;
       disasm_thumb(state, hw, hw2);
+    }
+    if (state->ldr_addr != ~0 && state->add_cmt) {
+      /* check the value at the address */
+      uint32_t offset = state->ldr_addr - start_address;
+      if (offset + 4 <= buffersize) {
+        uint32_t address = *(uint32_t*)(buffer + offset);
+        int sym_idx = get_symbol(state, address);
+        if (sym_idx >= 0) {
+          append_comment(state, state->symbols[sym_idx].name, " -> ");
+        } else {
+          char hex[40];
+          sprintf(hex, "0x%x", address);
+          append_comment(state, hex, " -> ");
+        }
+      }
     }
     if (!callback(state->address, state->text, user))
       return false;
-    if (state->size > buffersize)
+    if (state->size > remaining)
       break;
-    buffer += state->size;
-    buffersize -= state->size;
+    opc += state->size;
+    remaining -= state->size;
     /* check for mode switch */
-    if (symbolindex >= 0 && (symbolindex +1) < state->symbolcount) {
+    if (symbolindex >= 0 && (symbolindex + 1) < state->symbolcount) {
       uint32_t address = state->address + state->size;
       if (address >= state->symbols[symbolindex + 1].address) {
         symbolindex += 1;

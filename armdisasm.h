@@ -41,10 +41,12 @@ typedef struct {
   uint8_t arm_mode;   /**< 1 for ARM mode, 0 for Thumb */
   uint8_t add_addr;   /**< option: prefix decoded instructions with the address */
   uint8_t add_bin;    /**< option: prefix decoded instructions with the hex code */
-  uint8_t add_cmt;    /**< option: for decimal values, show hex value in comment */
+  uint8_t add_cmt;    /**< option: add comments with symbols or extra information */
 
   uint16_t it_mask;   /**< forward carried state for if-then instructions */
   uint16_t it_cond;
+
+  uint32_t ldr_addr;  /**< target address of recent literal load, or ~0 if none */
 
   ARMSYMBOL *symbols; /**< list of functions */
   int symbolcount;    /**< number of valid entries in the symbol list */
@@ -78,7 +80,7 @@ bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2);
 bool disasm_arm(ARMSTATE *state, uint32_t w);
 const char *disasm_result(ARMSTATE *state, int *size);
 
-typedef bool (*DISASM_CALLBACK)(const char *text, void *user);
+typedef bool (*DISASM_CALLBACK)(uint32_t address, const char *text, void *user);
 bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
                    int mode, DISASM_CALLBACK callback, void *user);
 

@@ -67,9 +67,9 @@ The functions `disasm_thumb` and `disasm_arm` do not use the symbol mode. Howeve
 
 Function `disasm_buffer` disassembles an entire buffer with binary machine language. It calls a callback function for each instruction, with the text of that instruction. Flags set with `disasm_init` apply here too. Parameter `mode` is set to the initial mode (`ARMMODE_ARM` or `ARMMODE_THUMB`), but if symbols (with a known mode) were added, `disasm_buffer` switches the mode as soon as it crosses the address of the symbol.
 
-    typedef bool (*DISASM_CALLBACK)(const char *text, void *user);
+    typedef bool (*DISASM_CALLBACK)(uint32_t address, const char *text, void *user);
 
-On each call to the callback, parameter `text` contains one line of disassembled output. Parameter `user` contains the value that was passed in to function `disasm_buffer`. The callback function must return `true` to proceed with disassembly (it will make `disasm_buffer` abort if it returns `false`).
+On each call to the callback, parameter `address` has the memory address of the instruction, and `text` contains one line of disassembled output. Parameter `user` contains the value that was passed in to function `disasm_buffer`. The callback function must return `true` to proceed with disassembly (it will make `disasm_buffer` abort if it returns `false`).
 
 This disassembler library offers no help in determining whether to use ARM mode or Thumb mode. The mode cannot be determined from the instructions themselves. You have to already know the mode to disassemble the buffer correctly. The ARM micro-controller itself uses the low bit of the `PC` register to indicate Thumb mode, even though the Thumb instructions are not actually on an odd address. The DWARF debugging information stores the real (even) function addresses (and does not store the mode). However, the ELF file format also has a symbol table, and this table records the address of Thumb mode functions on an odd address.
 
