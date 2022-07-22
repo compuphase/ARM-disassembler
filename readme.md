@@ -1,6 +1,6 @@
 # ARM-disasm
 
-This disassembler library was initially developed for the "Black Magic" debugger. This debugger is a front-end for GDB, with specific support for the Black Magic Probe, and a focus on debugging micro-controller projects. The Black Magic Probe targets ARM Cortex M0, M3, and A7 architectures, so these are also the target archtitectures for the ARM-disasm library. Only the 32-bit archiecture is supported (32-bit ARM and Thumb/Thumb-2).
+This disassembler library was initially developed for the "Black Magic" debugger. This debugger is a front-end for GDB, with specific support for the Black Magic Probe, and a focus on debugging micro-controller projects. The Black Magic Probe targets ARM Cortex M0, M3, and A7 architectures, so these are also the target architectures for the ARM-disasm library. Only the 32-bit architecture is supported (32-bit ARM and Thumb/Thumb-2).
 
 The library is written in plain C with C99 extensions.
 
@@ -10,13 +10,13 @@ ARM-disasm is licensed under the [Apache License version 2](https://www.apache.o
 
 ## Usage
 
-The first step is to initiallize the library.
+The first step is to initialize the library.
 
     void disasm_init(ARMSTATE *state, int flags);
 
 The first parameter contains the state of the disassembly, and it is updated after each step. The decoded instructions are read from this variable too. The `flags` parameter contains options for decoding.
 
-* `DISASM_ADDRESS`  prefix the instruction address to the the result
+* `DISASM_ADDRESS`  prefix the instruction address to the result
 * `DISASM_INSTR`    prefix the binary encoding of the instruction to the result
 * `DISASM_COMMENT`  add comments with symbolic information, or the value in a different base, if applicable
 
