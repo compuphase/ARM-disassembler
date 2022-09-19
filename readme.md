@@ -1,6 +1,6 @@
 # ARM-disasm
 
-This disassembler library was initially developed for the "Black Magic" debugger. This debugger is a front-end for GDB, with specific support for the Black Magic Probe, and a focus on debugging micro-controller projects. The Black Magic Probe targets ARM Cortex M0, M3, and A7 architectures, so these are also the target architectures for the ARM-disasm library. Only the 32-bit architecture is supported (32-bit ARM and Thumb/Thumb-2).
+This disassembler library was initially developed for the [Black Magic" debugger](https://github.com/compuphase/Black-Magic-Probe-Book). This debugger is a front-end for GDB, with specific support for the [Black Magic Probe](https://github.com/blackmagic-debug/blackmagic), and a focus on debugging micro-controller projects. The Black Magic Probe targets ARM Cortex M0, M3, and A7 architectures, so these are also the target architectures for the ARM-disasm library. Only the 32-bit architecture is supported (32-bit ARM and Thumb/Thumb-2).
 
 The library is written in plain C with C99 extensions.
 
