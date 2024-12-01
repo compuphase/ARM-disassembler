@@ -1,7 +1,7 @@
 /* ARM instruction decoder (disassembler)
  * Covers Thumb and Thumb2 (for Cortex-M series)
  *
- * Copyright 2022, CompuPhase
+ * Copyright 2022-2024, CompuPhase
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,17 +21,23 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-typedef struct {
-  const char *name;
+typedef struct ARMSYMBOL {
+  const char *name;   /**< symbol name, but may be NULL if unknown */
   uint32_t address;
   int mode;           /**< ARM mode, Thumb mode, or data */
 } ARMSYMBOL;
 
-typedef struct {
+typedef struct ARMPOOL {
   uint32_t address;   /**< start of the block */
   uint16_t size;      /**< size of the block (or zero if unknown) */
   uint16_t type;      /**< code, literal pool */
 } ARMPOOL;
+
+typedef struct ARMDATA {
+  uint32_t address;   /**< memory address of the block of (read-only) data */
+  uint32_t size;      /**< size of the block */
+  uint8_t *block;     /**< copy of the block */
+} ARMDATA;
 
 typedef struct {
   char text[128];     /**< decoded instruction (optionally prefixed with address/hex values) */
@@ -48,18 +54,21 @@ typedef struct {
 
   uint32_t ldr_addr;  /**< target address of recent literal load, or ~0 if none */
 
-  ARMSYMBOL *symbols; /**< list of functions */
+  ARMSYMBOL *symbols; /**< list of functions (or addresses of unknown functions) */
   int symbolcount;    /**< number of valid entries in the symbol list */
   int symbolsize;     /**< number of allocated entries in the symbol list */
 
   ARMPOOL *codepool;  /**< list of addresses with type */
   int poolcount;      /**< number of valid entries in the code map */
   int poolsize;       /**< number of allocated entries in the code map */
+
+  ARMDATA *literals;  /**< pointer to optional memory blocks for decoding literal data */
+  int literals_count; /**< count of literal data blocks */
 } ARMSTATE;
 
 #define DISASM_ADDRESS  0x0001  /**< prefix decoded instructions with the address */
 #define DISASM_INSTR    0x0002  /**< prefix encoded values (hex) to the decoded instructions */
-#define DISASM_COMMENT  0x0004  /**< for immediate values, add hex notation in a comment */
+#define DISASM_COMMENT  0x0004  /**< for immediate values or symbols, add value/string or name in a comment */
 
 void disasm_init(ARMSTATE *state, int flags);
 void disasm_cleanup(ARMSTATE *state);
@@ -81,8 +90,9 @@ bool disasm_arm(ARMSTATE *state, uint32_t w);
 const char *disasm_result(ARMSTATE *state, int *size);
 
 typedef bool (*DISASM_CALLBACK)(uint32_t address, const char *text, void *user);
-bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
+bool disasm_buffer(ARMSTATE *state, const uint8_t *buffer, size_t buffersize,
                    int mode, DISASM_CALLBACK callback, void *user);
+bool disasm_literals(ARMSTATE *state, const uint8_t *block, size_t blocksize, uint32_t address);
 
 #endif /* _ARMDISASM_H */
 

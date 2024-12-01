@@ -1,7 +1,7 @@
 /* ARM instruction decoder (disassembler)
  * Covers Thumb and Thumb2 (for Cortex M0 & Cortex M3), plus legacy ARM mode.
  *
- * Copyright 2022, CompuPhase
+ * Copyright 2022-2024, CompuPhase
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,10 @@
 #include <stdio.h>
 #include <string.h>
 #include "armdisasm.h"
+
+#if defined _MSC_VER
+# define strdup(s)         _strdup(s)
+#endif
 
 typedef struct tagENCODEMASK16 {
   uint16_t mask;  /* bits to mask off for the test */
@@ -150,13 +154,13 @@ static const char *shift_type(int type)
 
 static char *tail(char *text)
 {
-  assert(text != NULL);
+  assert(text);
   return text + strlen(text);
 }
 
 static void padinstr(char *text)
 {
-  assert(text != NULL);
+  assert(text);
   int i = strlen(text);
   assert(i > 0);        /* there should already be some text in there */
   if (i < 8) {
@@ -192,14 +196,14 @@ static int add_reglist(char *text, int mask)
 {
   strcat(text, "{");
   int count = 0;
-  for (int i = 0; register_name(i) != NULL; i++) {
+  for (int i = 0; register_name(i); i++) {
     if (BIT_SET(mask, i)) {
       if (count++ > 0)
         strcat(text, ", ");
       strcat(text, register_name(i));
       /* try to detect a range */
       int j;
-      for (j = i + 1; register_name(j) != NULL && BIT_SET(mask, j); j++)
+      for (j = i + 1; register_name(j) && BIT_SET(mask, j); j++)
         {}
       j -= 1; /* reset for overrun */
       if (j - i > 1) {
@@ -216,7 +220,7 @@ static int add_reglist(char *text, int mask)
 
 static void add_insert_prefix(ARMSTATE *state, uint32_t instr)
 {
-  assert(state != NULL);
+  assert(state);
 
   char prefix[32] = "";
   if (state->add_addr)
@@ -244,16 +248,16 @@ static void add_insert_prefix(ARMSTATE *state, uint32_t instr)
 
 static void append_comment(ARMSTATE *state, const char *text, const char *separator)
 {
-  assert(state != NULL);
+  assert(state);
   assert(state->add_cmt);
 
-  int len = strlen(state->text);
-  int padding = 24 - len;
+  size_t len = strlen(state->text);
+  int padding = 24 - (int)len;
   if (padding < 2)
     padding = 2;
 
   char prefix[40];
-  if (separator == NULL) {
+  if (!separator) {
     memset(prefix, ' ', padding);
     strcpy(prefix + padding, "; ");
   } else {
@@ -268,32 +272,43 @@ static void append_comment(ARMSTATE *state, const char *text, const char *separa
   if (strlen(state->text) + strlen(prefix) + strlen(text) < size) {
     strcat(state->text, prefix);
     strcat(state->text, text);
+  } else if (strlen(state->text) + strlen(prefix) + 4 < size) {
+    /* text fits partially, but not completely: copy part and append "..." */
+    size_t count = size - (strlen(state->text) + strlen(prefix) + 4);
+    strcat(state->text, prefix);
+    len = strlen(state->text);
+    if (count > 0) {
+      strncpy(state->text + len, text, count);
+      state->text[len + count] = '\0';
+    }
+    strcat(state->text, " ...");
+    assert(strlen(state->text) < sizearray(state->text));
   }
 }
 
 static void append_comment_hex(ARMSTATE *state, uint32_t value)
 {
-  assert(state != NULL);
+  assert(state);
   if (state->add_cmt && value >= 10) {
     char hex[40];
-    sprintf(hex, "0x%x", value);
+    sprintf(hex, "0x%08x", value);
     append_comment(state, hex, NULL);
   }
 }
 
 static void append_comment_symbol(ARMSTATE *state, uint32_t address)
 {
-  assert(state != NULL);
+  assert(state);
   if (state->add_cmt && state->symbolcount > 0) {
     int i = get_symbol(state, address);
-    if (i >= 0)
+    if (i >= 0 && state->symbols[i].name)
       append_comment(state, state->symbols[i].name, NULL);
   }
 }
 
 static void mark_address_type(ARMSTATE *state, uint32_t address, int type)
 {
-  assert(state != NULL);
+  assert(state);
   /* find the insertion point */
   int pos;
   for (pos = 0; pos < state->poolcount && state->codepool[pos].address < address; pos++)
@@ -304,8 +319,8 @@ static void mark_address_type(ARMSTATE *state, uint32_t address, int type)
     if (state->poolcount == state->poolsize) {
       int newsize = (state->poolsize == 0) ? 8 : 2 * state->poolsize;
       ARMPOOL *list = malloc(newsize * sizeof(ARMPOOL));
-      if (list != NULL) {
-        if (state->codepool != NULL) {
+      if (list) {
+        if (state->codepool) {
           memcpy(list, state->codepool, state->poolcount * sizeof(ARMPOOL));
           free((void*)state->codepool);
         }
@@ -326,7 +341,7 @@ static void mark_address_type(ARMSTATE *state, uint32_t address, int type)
 
 static int lookup_address_type(ARMSTATE *state, uint32_t address)
 {
-  assert(state != NULL);
+  assert(state);
   assert(state->poolcount == 0 || state->codepool != NULL);
   assert(state->poolcount <= state->poolsize);
   int type = POOL_CODE;
@@ -635,7 +650,7 @@ static bool thumb_cmp_branch(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 9))
     address += 32;
   address = state->address + 4 + 2 * address;
-  sprintf(tail(state->text), "%s, %07x", register_name(FIELD(instr, 0, 3)), address);
+  sprintf(tail(state->text), "%s, 0x%07x", register_name(FIELD(instr, 0, 3)), address);
   mark_address_type(state, address, POOL_CODE);
   state->size = 2;
   return true;
@@ -643,7 +658,7 @@ static bool thumb_cmp_branch(ARMSTATE *state, uint32_t instr)
 
 static bool thumb_push(ARMSTATE *state, uint32_t instr)
 {
-  /* 1011 010 xxxx xxxx - push register list */
+  /* 1011 010x xxxx xxxx - push register list */
   strcpy(state->text, "push");
   padinstr(state->text);
   int list = FIELD(instr, 0, 8);
@@ -658,7 +673,7 @@ static bool thumb_push(ARMSTATE *state, uint32_t instr)
 
 static bool thumb_pop(ARMSTATE *state, uint32_t instr)
 {
-  /* 1011 110 xxxx xxxx - pop register list */
+  /* 1011 110x xxxx xxxx - pop register list */
   strcpy(state->text, "pop");
   padinstr(state->text);
   int list = FIELD(instr, 0, 8);
@@ -848,7 +863,7 @@ static bool thumb_condbranch(ARMSTATE *state, uint32_t instr)
   int32_t address = FIELD(instr, 0, 8);
   SIGN_EXT(address, 8);
   address = state->address + 4 + 2 * address;
-  sprintf(tail(state->text), "%07x", address);
+  sprintf(tail(state->text), "0x%07x", address);
   mark_address_type(state, address, POOL_CODE);
   state->size = 2;
   return true;
@@ -857,7 +872,7 @@ static bool thumb_condbranch(ARMSTATE *state, uint32_t instr)
 static bool thumb_service(ARMSTATE *state, uint32_t instr)
 {
   /* 1101 1111 xxxx xxxx */
-  strcpy(state->text, "svc");
+  strcpy(state->text, "swi");
   add_it_cond(state, 0);
   padinstr(state->text);
   sprintf(tail(state->text), "#%u", FIELD(instr, 0, 8));
@@ -874,7 +889,7 @@ static bool thumb_branch(ARMSTATE *state, uint32_t instr)
   int32_t offset = FIELD(instr, 0, 11);
   SIGN_EXT(offset, 11);
   int32_t address = state->address + 4 + 2 * offset;
-  sprintf(tail(state->text), "%07x", address);
+  sprintf(tail(state->text), "0x%07x", address);
   mark_address_type(state, address, POOL_CODE);
   state->size = 2;
   return true;
@@ -1457,7 +1472,7 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
   if (BIT_SET(instr, 15)) {
     /* branches, miscellaneous control */
     if ((instr & 0x00005000) != 0) {
-      /* branches */
+      /* branches (with immediate offset) */
       int offs1 = FIELD(instr, 0, 11);
       int offs2 = FIELD(instr, 16, 10);
       int j1 = FIELD(instr, 13, 1);
@@ -1489,11 +1504,13 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
       int32_t address = state->address + 4;
       if (opc == 4)
         address = ALIGN4(state->address + 4); /* BLX target is aligned to 32-bit address */
-      address += offset; 
-      sprintf(tail(state->text), "%07x", address);
+      address += offset;
+      sprintf(tail(state->text), "0x%07x", address);
       append_comment_symbol(state, address);
       mark_address_type(state, address, POOL_CODE);
-    } else if (FIELD(instr, 6+16, 4) < 14) {
+      if (opc == 4)
+        disasm_symbol(state, NULL, address, ARMMODE_ARM); /* for BLX, also mark address as ARM mode */
+    } else if (FIELD(instr, 6 + 16, 4) < 14) {
       /* conditional branch */
       int offs1 = FIELD(instr, 0, 11);
       int offs2 = FIELD(instr, 16, 6);
@@ -1509,7 +1526,7 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
       strcat(state->text, conditions[c]);
       padinstr(state->text);
       int32_t address = state->address + 4 + offset;
-      sprintf(tail(state->text), "%07x", address);
+      sprintf(tail(state->text), "0x%07x", address);
       append_comment_symbol(state, address);
       mark_address_type(state, address, POOL_CODE);
     } else if (BIT_SET(instr, 26)) {
@@ -1575,7 +1592,7 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
           strcpy(state->text, "subs");
           add_it_cond(state, 0);
           padinstr(state->text);
-          sprintf(tail(state->text), "pc, lr, #%d", FIELD(instr, 0, 8));
+          sprintf(tail(state->text), "pc, lr, #%u", FIELD(instr, 0, 8));
         } else {
           strcpy(state->text, "bxj");
           add_it_cond(state, 0);
@@ -1705,7 +1722,7 @@ static bool thumb2_imm_br_misc(ARMSTATE *state, uint32_t instr)
                 register_name(Rn), imm);
         append_comment_hex(state, imm);
       } else {
-        sprintf(tail(state->text), "%s, %07x", register_name(Rd), imm);
+        sprintf(tail(state->text), "%s, 0x%07x", register_name(Rd), imm);
         append_comment_symbol(state, imm);
       }
     } else if ((instr & 0x03408000) == 0x02400000) {
@@ -2264,6 +2281,7 @@ static bool arm_dataproc_imsh(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 000x xxxx xxxx : xxxx xxxx xxx0 xxxx - data processing immediate shift */
   int cond = FIELD(instr, 28, 4);
+  assert(cond != 15); /* should have been handled by arm_unconditional() */
   if (cond == 15)
     return false;
 
@@ -2343,8 +2361,9 @@ static bool arm_dataproc_imsh(ARMSTATE *state, uint32_t instr)
 
 static bool arm_dataproc_rxsh(ARMSTATE *state, uint32_t instr)
 {
-  /* xxxx 000x xxx xxxx : xxxx xxxx 0xx1 xxxx - data processing register shift */
+  /* xxxx 000x xxxx xxxx : xxxx xxxx 0xx1 xxxx - data processing register shift */
   int cond = FIELD(instr, 28, 4);
+  assert(cond != 15); /* should have been handled by arm_unconditional() */
   if (cond == 15)
     return false;
 
@@ -2548,16 +2567,14 @@ static bool arm_loadstor_imm(ARMSTATE *state, uint32_t instr)
 {
   /* xxxx 010x xxxx xxxx : xxxx xxxx xxxx xxxx - load/store immediate offset */
   int cond = FIELD(instr, 28, 4);
-  if (cond == 15) {
-    strcpy(state->text, "pld");
-  } else {
-    strcpy(state->text, BIT_SET(instr, 20) ? "ldr" : "str");
-    add_condition(state, cond);
-    if (BIT_SET(instr, 22))
-      strcat(state->text, "b");
-    if (BIT_CLR(instr, 24) && BIT_SET(instr, 21))
-      strcat(state->text, "t");
-  }
+  if (cond == 15)
+    return false;
+  strcpy(state->text, BIT_SET(instr, 20) ? "ldr" : "str");
+  add_condition(state, cond);
+  if (BIT_SET(instr, 22))
+    strcat(state->text, "b");
+  if (BIT_CLR(instr, 24) && BIT_SET(instr, 21))
+    strcat(state->text, "t");
   padinstr(state->text);
 
   int imm = FIELD(instr, 0, 12);
@@ -2602,7 +2619,6 @@ static bool arm_loadstor_reg(ARMSTATE *state, uint32_t instr)
   int shiftcount = FIELD(instr, 7, 5);
   if (shifttype != 0 || shiftcount != 0)
     sprintf(tail(state->text), ", %s", decode_imm_shift(shifttype, shiftcount));
-
   strcat(state->text, "]");
   return true;
 }
@@ -2858,7 +2874,7 @@ static bool arm_branch(ARMSTATE *state, uint32_t instr)
   int32_t address = FIELD(instr, 0, 24);
   SIGN_EXT(address, 24);
   address = state->address + 8 + 4 * address;
-  sprintf(tail(state->text), "%07x", address);
+  sprintf(tail(state->text), "0x%07x", address);
   append_comment_symbol(state, address);
   mark_address_type(state, address, POOL_CODE);
   return true;
@@ -2877,7 +2893,7 @@ static bool arm_co_loadstor(ARMSTATE *state, uint32_t instr)
   else
     strcpy(state->text, BIT_SET(instr, 20) ? "ldc" : "stc");
   if (cond == 15)
-    strcat(state->text, "2");
+    strcat(state->text, "2"); /* MRRC & MCRR -> ARMv6+, LDC2 & STC2 -> ARMv5+ */
   else
     add_condition(state, cond);
   padinstr(state->text);
@@ -2913,7 +2929,7 @@ static bool arm_co_dataproc(ARMSTATE *state, uint32_t instr)
   int cond = FIELD(instr, 28, 4);
   strcpy(state->text, "cdp");
   if (cond == 15)
-    strcat(state->text, "2");
+    strcat(state->text, "2"); /* ARMv5+ */
   else
     add_condition(state, cond);
   padinstr(state->text);
@@ -2929,7 +2945,7 @@ static bool arm_co_trans(ARMSTATE *state, uint32_t instr)
   int cond = FIELD(instr, 28, 4);
   strcpy(state->text, BIT_CLR(instr, 20) ? "mcr" : "mrc");
   if (cond == 15)
-    strcat(state->text, "2");
+    strcat(state->text, "2"); /* ARMv5+ */
   else
     add_condition(state, cond);
   padinstr(state->text);
@@ -2945,14 +2961,125 @@ static bool arm_softintr(ARMSTATE *state, uint32_t instr)
   int cond = FIELD(instr, 28, 4);
   if (cond == 15)
     return false;
-  strcpy(state->text, "svc");
+  strcpy(state->text, "swi");
   add_condition(state, cond);
   padinstr(state->text);
-  sprintf(tail(state->text), "0x%08x", FIELD(instr, 0, 24));
+  sprintf(tail(state->text), "0x%06x", FIELD(instr, 0, 24));
   return true;
 }
 
+static bool arm_unconditional(ARMSTATE *state, uint32_t instr)
+{
+  /* 1111 xxxx xxxx xxxx : xxxx xxxx xxxx xxxx - unconditional instructions */
+  if (FIELD(instr, 20, 8) == 0x10) {
+    if (BIT_CLR(instr, 16)) {
+      /* 1111 0001 0000 xxx0 : xxxx xxxx xx0x xxxx - CPS (ARMv6+) */
+      strcpy(state->text, "cps");
+      int imod = FIELD(instr, 18, 2);
+      if (imod == 2)
+        strcat(state->text, "ie");
+      else if (imod == 3)
+        strcat(state->text, "id");
+      padinstr(state->text);
+      int mmod = BIT_SET(instr, 17);
+      if (imod != 0) {
+        int iflags = FIELD(instr, 6, 3);
+        if (iflags & 4)
+          strcat(state->text, "a");
+        if (iflags & 2)
+          strcat(state->text, "i");
+        if (iflags & 1)
+          strcat(state->text, "f");
+        if (mmod)
+          strcat(state->text, ", ");
+      }
+      if (mmod)
+        sprintf(tail(state->text), "#%u", FIELD(instr, 0, 5));
+    } else {
+      /* 1111 0001 0000 0001 : xxxx xxxx 0000 xxxx - SETEND (ARMv6+) */
+      if (FIELD(instr, 4, 4) != 0)
+        return false;
+      strcpy(state->text, "setend");
+      padinstr(state->text);
+      strcat(state->text, BIT_SET(instr, 9) ? "BE" : "LE");
+    }
+    return true;
+  }
+  if (FIELD(instr, 26, 2) == 0x01) {
+    /* 1111 01x1 x101 xxxx : 1111 xxxx xxxx xxxx - PLD (ARMv5+ E variants) */
+    if (FIELD(instr, 12, 4) != 0x0f || BIT_CLR(instr, 24))
+      return false;
+    strcpy(state->text, "pld");
+    padinstr(state->text);
+    int Rn = FIELD(instr, 16, 4);
+    if (BIT_CLR(instr, 25)) {
+      int imm = FIELD(instr, 0, 12);
+      if (BIT_CLR(instr, 23))
+        imm = -imm;
+      sprintf(tail(state->text), "[%s, #%d]", register_name(Rn), imm);
+      if (Rn == 15 && BIT_SET(instr, 24) && BIT_CLR(instr, 21)) {
+        imm += ALIGN4(state->address + 4);
+        state->ldr_addr = imm;
+        mark_address_type(state, state->ldr_addr, POOL_LITERAL);
+      }
+      append_comment_hex(state, (uint32_t)imm);
+    } else {
+      const char *sign = BIT_CLR(instr, 23) ? "-" : "";
+      sprintf(tail(state->text), "[%s, %s%s", register_name(Rn),
+              sign, register_name(FIELD(instr, 0, 4)));
+      int shifttype = FIELD(instr, 5, 2);
+      int shiftcount = FIELD(instr, 7, 5);
+      if (shifttype != 0 || shiftcount != 0)
+        sprintf(tail(state->text), ", %s", decode_imm_shift(shifttype, shiftcount));
+      strcat(state->text, "]");
+    }
+    return true;
+  }
+  if (FIELD(instr, 25, 3) == 0x04) {
+    static const char *modes[]= { "da", "ia", "db", "ib" };
+    int Rn = FIELD(instr, 16, 4);
+    int addr_mode = FIELD(instr, 23, 2);
+    if (BIT_CLR(instr, 20)) {
+      /* 1111 100x x1x0 1101 : xxxx 0101 xxxx xxxx SRS (ARMv6+) */
+      if (FIELD(instr, 8, 4) != 0x05 || BIT_CLR(instr, 22) || Rn != 13)
+        return false;
+      sprintf(state->text, "srs%s", modes[addr_mode]);
+      padinstr(state->text);
+      sprintf(tail(state->text), "#%u", FIELD(instr, 0, 5));
+    } else {
+      /* 1111 100x x0x1 xxxx : xxxx 1010 xxxx xxxx - RFE (ARMv6+) */
+      if (FIELD(instr, 8, 4) != 0x0a || BIT_SET(instr, 22))
+        return false;
+      sprintf(state->text, "rfe%s", modes[addr_mode]);
+      padinstr(state->text);
+      strcat(state->text, register_name(Rn));
+    }
+    if (BIT_SET(instr,21))
+      strcat(state->text, "!");
+    return true;
+  }
+  if (FIELD(instr, 25, 3) == 0x05) {
+    /* 1111 101x xxxx xxxx : xxxx xxxx xxxx xxxx - BLX with immediate (ARMv5+) */
+    int imm = FIELD(instr, 0, 24);
+    SIGN_EXT(imm, 24);
+    imm <<= 2;
+    if (BIT_SET(instr, 24))
+      imm += 2;
+    int32_t address = state->address + 8 + imm;
+    strcpy(state->text, "blx");
+    padinstr(state->text);
+    sprintf(tail(state->text), "0x%07x", address);
+    append_comment_symbol(state, address);
+    mark_address_type(state, address, POOL_CODE);
+    disasm_symbol(state, NULL, address, ARMMODE_THUMB); /* also mark address as Thumb mode */
+    return true;
+  }
+
+  return false; /* note: instruction not recognized here may still be valid */
+}
+
 static const ENCODEMASK32 arm_table[] = {
+  { 0xf0000000, 0xf0000000, arm_unconditional },/* unconditional instructions */
   { 0x0e000010, 0x00000000, arm_dataproc_imsh },/* data processing with immediate shift, miscellaneous instructions */
   { 0x0e000090, 0x00000010, arm_dataproc_rxsh },/* data processing with register shift, miscellaneous instructions */
   { 0x0e000090, 0x00000090, arm_mult_loadstor },/* multiplies, extra load/stores */
@@ -2981,9 +3108,62 @@ static int get_symbol(ARMSTATE *state, uint32_t address)
   return -1;
 }
 
+/** is_utf8_string() checks whether there is a zero-terminated string at the
+ *  starting offset (and fitting inside the buffer). Below the space character,
+ *  only \r, \n and \t are considered valid.
+ *  If successfull, the function returns the length plus 2 (for double quotes at
+ *  the start and end of the string). If parameter `string` and `strsize` are
+ *  valid, the string is copied to that buffer.
+ */
+static int is_utf8_string(const uint8_t *buffer, size_t buffersize, int offset, char *string, int strsize)
+{
+  int index = offset;
+  while (index < buffersize && buffer[index]) {
+    if (buffer[index] < ' ' && buffer[index] != '\r' && buffer[index] != '\n' && buffer[index] != '\t')
+      break;
+    if (buffer[index] == '\r' || buffer[index] == '\n' || buffer[index] == '\t' || buffer[index] == '\\' || buffer[index] == '"')
+      index += 2; /* these characters are escaped */
+    else if (buffer[index] < 0x80)
+      index += 1;
+    else if (index + 1 < buffersize && (buffer[index] & 0xe0) == 0xc0 && (buffer[index + 1] & 0xc0) == 0x80)
+      index += 2;
+    else if (index + 2 < buffersize && (buffer[index] & 0xf0) == 0xe0 && (buffer[index + 1] & 0xc0) == 0x80 && (buffer[index + 2] & 0xc0) == 0x80)
+      index += 3;
+    else if (index + 3 < buffersize && (buffer[index] & 0xf8) == 0xf0 && (buffer[index + 1] & 0xc0) == 0x80 && (buffer[index + 2] & 0xc0) == 0x80 && (buffer[index + 3] & 0xc0) == 0x80)
+      index += 4;
+    else
+      break;
+  }
+  if (index >= buffersize || index == offset || buffer[index])
+    return 0; /* not a valid string at the offset */
+  int size = index - offset;
+  if (string && strsize >= size + 3) {
+    char *ptr = string;
+    *ptr++ = '"';
+    for (index = offset; index < offset + size; index++) {
+      if (buffer[index] == '\r' || buffer[index] == '\n' || buffer[index] == '\t' || buffer[index] == '\\' || buffer[index] == '"') {
+        *ptr++ = '\\';
+        if (buffer[index] == '\r')
+          *ptr++ = 'r';
+        else if (buffer[index] == '\n')
+          *ptr++ = 'n';
+        else if (buffer[index] == '\t')
+          *ptr++ = 't';
+        else
+          *ptr++ = buffer[index];
+      } else {
+        *ptr++ = buffer[index];
+      }
+    }
+    *ptr++ = '"';
+    *ptr = '\0';
+  }
+  return size + 3;  /* +2 for quotes, +1 for \0 */
+}
+
 static void dump_word(ARMSTATE *state, uint32_t w)
 {
-  assert(state != NULL);
+  assert(state);
   if (state->size == 4) {
     strcpy(state->text, ".word");
     padinstr(state->text);
@@ -2999,7 +3179,7 @@ static void dump_word(ARMSTATE *state, uint32_t w)
       append_comment_symbol(state, w);
     } else {
       /* check whether to add ASCII characters as comment */
-      unsigned char c[4];
+      uint8_t c[4];
       bool all_ascii = true;
       for (int i = 0; i < 4; i++) {
         c[i] = (w >> 8*i) & 0xff;
@@ -3052,7 +3232,7 @@ static void dump_word(ARMSTATE *state, uint32_t w)
  */
 bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
 {
-  assert(state != NULL);
+  assert(state);
   state->address += state->size;  /* increment address from previous step */
   state->arm_mode = 0;
   state->ldr_addr = ~0;
@@ -3102,7 +3282,7 @@ bool disasm_thumb(ARMSTATE *state, uint16_t hw, uint16_t hw2)
 
 bool disasm_arm(ARMSTATE *state, uint32_t w)
 {
-  assert(state != NULL);
+  assert(state);
   state->address += state->size;  /* increment address from previous step */
   state->size = 0;                /* zero'ed out to help debugging */
   state->arm_mode = 1;
@@ -3123,7 +3303,13 @@ bool disasm_arm(ARMSTATE *state, uint32_t w)
         add_insert_prefix(state, w);
         return result;
       }
-      break;  /* on match, but false result, don't look further */
+      assert(idx > 0 || arm_table[idx].func == arm_unconditional);
+      if (idx > 0) {
+        break;  /* on match, but false result, don't look further, but make an
+                   exception for index 0, which handles general unconditional
+                   instructions (which are often variants of the conditional
+                   instructions, and handled there) */
+      }
     }
   }
 
@@ -3138,7 +3324,7 @@ bool disasm_arm(ARMSTATE *state, uint32_t w)
  */
 void disasm_init(ARMSTATE *state, int flags)
 {
-  assert(state != NULL);
+  assert(state);
   memset(state, 0, sizeof(ARMSTATE));
   state->ldr_addr = ~0;
 
@@ -3155,8 +3341,8 @@ void disasm_init(ARMSTATE *state, int flags)
  */
 void disasm_clear_codepool(ARMSTATE *state)
 {
-  assert(state != NULL);
-  if (state->codepool != NULL) {
+  assert(state);
+  if (state->codepool) {
     free((void*)state->codepool);
     state->codepool = NULL;
     state->poolcount = 0;
@@ -3172,8 +3358,8 @@ void disasm_clear_codepool(ARMSTATE *state)
  */
 void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size)
 {
-  assert(state != NULL);
-  if (state->codepool == NULL)
+  assert(state);
+  if (!state->codepool)
     return;
   /* find start */
   int idx;
@@ -3203,11 +3389,19 @@ void disasm_compact_codepool(ARMSTATE *state, uint32_t address, uint32_t size)
  */
 void disasm_cleanup(ARMSTATE *state)
 {
-  assert(state != NULL);
-  if (state->symbols != NULL) {
+  assert(state);
+  if (state->symbols) {
     for (int i = 0; i < state->symbolcount; i++)
-      free((void*)state->symbols[i].name);
-    free((void*)state->symbols);
+      if (state->symbols[i].name)
+        free((void *)state->symbols[i].name);
+    free(state->symbols);
+  }
+  if (state->literals) {
+    for (int i = 0; i < state->literals_count; i++) {
+      assert(state->literals[i].block);
+      free(state->literals[i].block);
+    }
+    free(state->literals);
   }
   disasm_clear_codepool(state);
   memset(state, 0, sizeof(ARMSTATE));
@@ -3222,7 +3416,7 @@ void disasm_cleanup(ARMSTATE *state)
  */
 void disasm_address(ARMSTATE *state, uint32_t address)
 {
-  assert(state != NULL);
+  assert(state);
   state->address = address;
   state->size = 0;                /* do not increment address on next instruction */
 
@@ -3235,15 +3429,17 @@ void disasm_address(ARMSTATE *state, uint32_t address)
  *  disassembly.
  *
  *  \param state    The decoder state.
- *  \param name     Symbol name.
+ *  \param name     Symbol name. This parameter may be NULL (for a function with
+ *                  an unknown name, but a known mode.
  *  \param address  Symbol address.
- *  \param mode     Disassenbly mode for the symbol (if known).
+ *  \param mode     Disassenbly mode for the symbol (or `ARMMODE_UNKNOWN` if
+ *                  unknown).
  *
  *  \note The list is kept sorted on address.
  */
 void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode)
 {
-  assert(state != NULL);
+  assert(state);
 
   /* find the insertion point */
   int pos;
@@ -3251,16 +3447,19 @@ void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode
     {}
   if (pos >= state->symbolcount || state->symbols[pos].address != address) {
     /* no entry yet at this address */
-    char *namecopy = strdup(name);
-    if (namecopy == NULL)
-      return; /* skip adding the symbol on a memory error */
+    char *namecopy = NULL;      /* preset */
+    if (name) {
+      namecopy = strdup(name);
+      if (!namecopy)
+        return;                 /* skip adding the symbol on a memory error */
+    }
     /* first see whether there is space */
     assert(state->symbolcount <= state->symbolsize);
     if (state->symbolcount == state->symbolsize) {
       int newsize = (state->symbolsize == 0) ? 8 : 2 * state->symbolsize;
       ARMSYMBOL *list = malloc(newsize * sizeof(ARMSYMBOL));
-      if (list != NULL) {
-        if (state->symbols != NULL) {
+      if (list) {
+        if (state->symbols) {
           memcpy(list, state->symbols, state->symbolcount * sizeof(ARMSYMBOL));
           free((void*)state->symbols);
         }
@@ -3280,8 +3479,14 @@ void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode
       if (mode == ARMMODE_ARM || mode == ARMMODE_THUMB)
         mark_address_type(state, address, POOL_CODE);
     } else {
-      free((void*)namecopy);  /* clean up, on failure adding the symbol */
+      if (namecopy)
+        free((void *)namecopy); /* clean up, on failure adding the symbol */
     }
+  } else if (pos < state->symbolcount && state->symbols[pos].address == address
+             && !state->symbols[pos].name && name) {
+    /* address is known, but it does not yet have a name attached (and a name
+       is given for the address) */
+    state->symbols[pos].name = strdup(name);
   }
 }
 
@@ -3297,10 +3502,57 @@ void disasm_symbol(ARMSTATE *state, const char *name, uint32_t address, int mode
  */
 const char *disasm_result(ARMSTATE *state, int *size)
 {
-  assert(state != NULL);
+  assert(state);
   if (size != 0)
     *size = state->size;
   return state->text;
+}
+
+/** disasm_literals() copies a buffer for literal data into the decoder state.
+ *  The use-case of this function, is to load the `.rodata` section of an ELF
+ *  file into this buffer. The function `disasm_buffer()` then uses this block
+ *  to follow literal strings (referred from code). Multiple buffers can be
+ *  added. To clear the literal pools, use `disasm_cleanup()`.
+ *
+ *  \param state      The decoder state.
+ *  \param block      The buffer with literal data. This function makes a copy
+ *                    of this buffer (so the block that this parameter points
+ *                    to, may be deleted).
+ *  \param blocksize  The size of the data buffer.
+ *  \param address    Memory address that the literal data has in the binary
+ *                    blob (or memory space).
+ *
+ *  \return `true` on success, `false` on failure (memory allocation error).
+ */
+bool disasm_literals(ARMSTATE *state, const uint8_t *block, size_t blocksize, uint32_t address)
+{
+  assert(state);
+  assert(block);
+  assert(blocksize > 0);
+  /* make a copy of the block */
+  uint8_t *blkcopy = malloc(blocksize);
+  if (!blkcopy)
+    return false;
+  memcpy(blkcopy, block, blocksize);
+  /* expand the list of structures to hold the block information */
+  ARMDATA *list = malloc((state->literals_count + 1) * sizeof(ARMDATA));
+  if (!list) {
+    free(blkcopy);
+    return false;
+  }
+  if (state->literals_count > 0) {
+    assert(state->literals);
+    memcpy(list, state->literals, state->literals_count * sizeof(ARMDATA));
+    free(state->literals);
+  }
+  /* fill in the new entry */
+  list[state->literals_count].block = blkcopy;
+  list[state->literals_count].size = blocksize;
+  list[state->literals_count].address = address;
+  /* set updated list (old list was already deleted) */
+  state->literals = list;
+  state->literals_count += 1;
+  return true;
 }
 
 /** disasm_buffer() disassembles a buffer with machine code, and calls a
@@ -3310,18 +3562,26 @@ const char *disasm_result(ARMSTATE *state, int *size)
  *  \param state      The decoder state.
  *  \param buffer     The buffer with machine code.
  *  \param buffersize The size of the machine code buffer.
- *  \param mode       ARMMODE_ARM or ARMMODE_THUMB; may also be set to
- *                    ARMMODE_UNKNOWN if symbols with a known mode have been
+ *  \param mode       `ARMMODE_ARM` or `ARMMODE_THUMB`; may also be set to
+ *                    `ARMMODE_UNKNOWN` if symbols with a known mode have been
  *                    added.
  *  \param callback   The function that is called for each line of output.
  *  \param user       This parameter is passed to the callback function.
+ *
+ *  \return `true` on success, `false` on failure.
+ *
+ *  \note If the callback function returns `false`, decoding the buffer is
+ *        aborted and the function returns `false`.
+ *
+ *  \note An invalid instruction still causes the callback to be called,
+ *        but with an empty result; instruction decoding is not aborted.
  */
-bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersize,
+bool disasm_buffer(ARMSTATE *state, const uint8_t *buffer, size_t buffersize,
                    int mode, DISASM_CALLBACK callback, void *user)
 {
-  assert(state != NULL);
-  assert(buffer != NULL);
-  assert(callback != NULL);
+  assert(state);
+  assert(buffer);
+  assert(callback);
   /* find symbol for automatic mode switch, and set initial mode */
   int symbolindex = -1;
   int i;
@@ -3336,7 +3596,7 @@ bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
     mode = ARMMODE_THUMB; /* no mode given, and no mode on symbols -> make arbitrary choice */
 
   uint32_t start_address = state->address;  /* address pertaining to the start of the buffer */
-  const unsigned char *opc = buffer;
+  const uint8_t *opc = buffer;
   size_t remaining = buffersize;
   for ( ;; ) {
     if (mode == ARMMODE_ARM) {
@@ -3359,12 +3619,29 @@ bool disasm_buffer(ARMSTATE *state, const unsigned char *buffer, size_t buffersi
       if (offset + 4 <= buffersize) {
         uint32_t address = *(uint32_t*)(buffer + offset);
         int sym_idx = get_symbol(state, address);
-        if (sym_idx >= 0) {
+        if (sym_idx >= 0 && state->symbols[sym_idx].name) {
           append_comment(state, state->symbols[sym_idx].name, " -> ");
         } else {
           char hex[40];
-          sprintf(hex, "0x%x", address);
+          sprintf(hex, "0x%08x", address);
           append_comment(state, hex, " -> ");
+          /* test whether that address points to a string literal */
+          if (state->literals) {
+            assert(state->literals_count>0);
+            for (int i = 0; i < state->literals_count; i++) {
+              if (address < state->literals[i].address || address + 4 > state->literals[i].address + state->literals[i].size)
+                continue; /* address falls outside this literal pool */
+              int textlen = is_utf8_string(state->literals[i].block, state->literals[i].size, address - state->literals[i].address, NULL, 0);
+              if (textlen >= 2) {
+                char *text = malloc(textlen);
+                if (text) {
+                  is_utf8_string(state->literals[i].block, state->literals[i].size, address - state->literals[i].address, text, textlen);
+                  append_comment(state, text, " -> ");
+                  free(text);
+                }
+              }
+            }
+          }
         }
       }
     }
